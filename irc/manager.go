@@ -34,14 +34,33 @@ type Manager struct {
 	unregister chan *Client
 }
 
-type Client struct {
-	socket net.Conn
-	reader *bufio.Scanner
-	writer *bufio.Writer
-	data   chan string
+func NewManager(listener net.Listener) {
+	manager := Manager{
+		clients:    make(map[*Client]bool),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+	}
+	go manager.listenForConnections()
+
+	for {
+		connection, error := listener.Accept()
+		if error != nil {
+			log.Error(error)
+			return
+		}
+		client := &Client{
+			socket: connection,
+			reader: bufio.NewScanner(connection),
+			writer: bufio.NewWriter(connection),
+			data:   make(chan string),
+		}
+		manager.register <- client
+		go manager.receive(client)
+		go manager.send(client)
+	}
 }
 
-func (manager *Manager) startServerSocket() {
+func (manager *Manager) listenForConnections() {
 	for {
 		select {
 		case connection := <-manager.register:
@@ -66,8 +85,7 @@ func (manager *Manager) receive(client *Client) {
 		message := client.reader.Text()
 		if len(message) > 0 {
 			log.Debug("Received: " + message)
-			client.data <- message
-			// TODO do something with it
+			client.handleIncoming(message)
 		}
 	}
 }

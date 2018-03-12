@@ -24,19 +24,50 @@
 package irc
 
 import (
-	"github.com/op/go-logging"
-	"net"
+	"testing"
 )
 
-var log = logging.MustGetLogger("irc")
+type testpair struct {
+	input string
+	cmd   string
+	args  []string
+}
 
-func StartServer() {
-	log.Info("Starting server...")
-	listener, error := net.Listen("tcp", ":6667")
-	if error != nil {
-		log.Error(error)
-		return
+var tests = []testpair{
+	{"", "", []string{}},
+	{"nick test", "NICK", []string{"test"}},
+	{"nick    test", "NICK", []string{"test"}},
+	{"   nick    test   ", "NICK", []string{"test"}},
+	{"user test 0 0 :test user", "USER", []string{"test", "0", "0", "test user"}},
+	{"privmsg #test :testing 1 2 3", "PRIVMSG", []string{"#test", "testing 1 2 3"}},
+	{"privmsg   #test    :testing 1 2 3   ", "PRIVMSG", []string{"#test", "testing 1 2 3"}},
+	{"privmsg   #test    :", "PRIVMSG", []string{"#test", ""}},
+}
+
+func TestNewMessage(t *testing.T) {
+	for _, test := range tests {
+		m := NewMessage(test.input)
+		if m.cmd != test.cmd {
+			t.Error("For", test.input,
+				"expected cmd", test.cmd,
+				"got", m.cmd,
+			)
+		}
+		if len(test.args) != len(m.args) {
+			t.Error("For", test.input,
+				"expected arg length", len(test.args),
+				"got", len(m.args),
+			)
+		} else {
+			for i, _ := range test.args {
+				if test.args[i] != m.args[i] {
+					t.Error("For", test.input,
+						"expected arg ", i,
+						"to be", test.args[i],
+						"got", m.args[i],
+					)
+				}
+			}
+		}
 	}
-
-	NewManager(listener)
 }

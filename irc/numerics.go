@@ -24,19 +24,33 @@
 package irc
 
 import (
-	"github.com/op/go-logging"
-	"net"
+	"fmt"
 )
 
-var log = logging.MustGetLogger("irc")
+// replies
 
-func StartServer() {
-	log.Info("Starting server...")
-	listener, error := net.Listen("tcp", ":6667")
-	if error != nil {
-		log.Error(error)
-		return
-	}
+// errors
+const ErrNoSuchNick = "401"
+const ErrNoSuchChannel = "403"
+const ErrCannotSendToChan = "404"
+const ErrTooManyChannels = "405"
+const ErrTooManyTargets = "407"
+const ErrNoRecipient = "411"
+const ErrNoTextToSend = "412"
+const ErrUnknownCommand = "421"
+const ErrNoNicknameGiven = "431"
+const ErrErroneousNickname = "432"
+const ErrNicknameInUse = "433"
+const ErrNickCollision = "436"
+const ErrNoNickChange = "447"
+const ErrForbiddenChannel = "448"
+const ErrNotRegistered = "451"
+const ErrNeedMoreParams = "461"
+const ErrAlreadyRegistered = "462"
+const ErrKeySet = "467"
+const ErrChannelIsFull = "471"
+const ErrBadChannelKey = "475"
 
-	NewManager(listener)
+func formatSimpleError(server string, numeric string, verb string, msg string) string {
+	return fmt.Sprintf(":%s %s %s :%s", server, numeric, verb, msg)
 }

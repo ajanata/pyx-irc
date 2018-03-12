@@ -24,19 +24,38 @@
 package irc
 
 import (
-	"github.com/op/go-logging"
-	"net"
+	"regexp"
+	"strings"
 )
 
-var log = logging.MustGetLogger("irc")
+var whitespaceRegex = regexp.MustCompile("\\s+")
 
-func StartServer() {
-	log.Info("Starting server...")
-	listener, error := net.Listen("tcp", ":6667")
-	if error != nil {
-		log.Error(error)
-		return
+type Message struct {
+	cmd  string
+	args []string
+	orig string
+}
+
+func NewMessage(input string) Message {
+	msg := Message{orig: input}
+
+	input = strings.TrimSpace(input)
+	// easy case if we don't have any trail
+	if !strings.Contains(input, ":") {
+		parts := whitespaceRegex.Split(input, -1)
+		msg.cmd = parts[0]
+		msg.args = parts[1:]
+	} else {
+		// have to do this a bit more complicated
+		bigparts := strings.SplitN(input, ":", 2)
+		parts := whitespaceRegex.Split(strings.TrimSpace(bigparts[0]), -1)
+		msg.cmd = parts[0]
+		msg.args = parts[1:]
+		msg.args = append(msg.args, bigparts[1])
 	}
 
-	NewManager(listener)
+	msg.cmd = strings.ToUpper(msg.cmd)
+
+	log.Debugf("Parsed message, cmd: %s args: %s", msg.cmd, msg.args)
+	return msg
 }
