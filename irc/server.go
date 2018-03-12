@@ -21,21 +21,45 @@
  * WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package main
+package irc
 
 import (
-	"github.com/ajanata/pyx-irc/irc"
+	"bufio"
 	"github.com/op/go-logging"
-	"os"
+	"net"
 )
 
-var log = logging.MustGetLogger("main")
-var logFormat = logging.MustStringFormatter(`%{color}%{time:15:04:05.000} %{level:.5s} %{id:03x} %{shortfunc} (%{shortfile}) %{color:reset}>%{message}`)
+var log = logging.MustGetLogger("irc")
 
-func main() {
-	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
-	logging.SetBackend(formattedStdErr)
+func StartServer() {
+	log.Info("Starting server...")
+	listener, error := net.Listen("tcp", ":6667")
+	if error != nil {
+		log.Error(error)
+		return
+	}
 
-	irc.StartServer()
+	manager := Manager{
+		clients:    make(map[*Client]bool),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+	}
+	go manager.startServerSocket()
+
+	for {
+		connection, _ := listener.Accept()
+		if error != nil {
+			log.Error(error)
+			return
+		}
+		client := &Client{
+			socket: connection,
+			reader: bufio.NewScanner(connection),
+			writer: bufio.NewWriter(connection),
+			data:   make(chan string),
+		}
+		manager.register <- client
+		go manager.receive(client)
+		go manager.send(client)
+	}
 }
