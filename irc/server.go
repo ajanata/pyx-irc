@@ -30,6 +30,9 @@ import (
 
 var log = logging.MustGetLogger("irc")
 
+// FIXME
+const MyServerName = "localhost"
+
 func StartServer() {
 	log.Info("Starting server...")
 	listener, error := net.Listen("tcp", ":6667")

@@ -26,6 +26,8 @@ package main
 import (
 	"github.com/ajanata/pyx-irc/irc"
 	"github.com/op/go-logging"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 )
 
@@ -36,6 +38,10 @@ func main() {
 	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
 	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
 	logging.SetBackend(formattedStdErr)
+
+	go func() {
+		log.Info(http.ListenAndServe("localhost:6680", nil))
+	}()
 
 	irc.StartServer()
 }

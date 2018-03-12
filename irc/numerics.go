@@ -28,6 +28,17 @@ import (
 )
 
 // replies
+const RplWelcome = "001"
+const RplYourHost = "002"
+const RplMyInfo = "004"
+const RplISupport = "005"
+
+const RplLUserClient = "251"
+const RplLUserOp = "252"
+const RplLUserChannels = "254"
+const RplLUserMe = "255"
+const RplLocalUsers = "265"
+const RplGlobalUsers = "266"
 
 // errors
 const ErrNoSuchNick = "401"
@@ -38,6 +49,7 @@ const ErrTooManyTargets = "407"
 const ErrNoRecipient = "411"
 const ErrNoTextToSend = "412"
 const ErrUnknownCommand = "421"
+const ErrNoMotd = "422"
 const ErrNoNicknameGiven = "431"
 const ErrErroneousNickname = "432"
 const ErrNicknameInUse = "433"
@@ -51,6 +63,10 @@ const ErrKeySet = "467"
 const ErrChannelIsFull = "471"
 const ErrBadChannelKey = "475"
 
-func formatSimpleError(server string, numeric string, verb string, msg string) string {
-	return fmt.Sprintf(":%s %s %s :%s", server, numeric, verb, msg)
+func formatSimpleReply(numeric string, target string, msg string) string {
+	return formatFmt(numeric, target, ":%s", msg)
+}
+
+func formatFmt(numeric string, target string, format string, args ...interface{}) string {
+	return fmt.Sprintf(":%s %s %s %s", MyServerName, numeric, target, fmt.Sprintf(format, args...))
 }

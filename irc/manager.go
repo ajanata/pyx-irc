@@ -24,7 +24,6 @@
 package irc
 
 import (
-	"bufio"
 	"net"
 )
 
@@ -48,29 +47,26 @@ func NewManager(listener net.Listener) {
 			log.Error(error)
 			return
 		}
-		client := &Client{
-			socket: connection,
-			reader: bufio.NewScanner(connection),
-			writer: bufio.NewWriter(connection),
-			data:   make(chan string),
-		}
+		client := NewClient(connection)
 		manager.register <- client
 		go manager.receive(client)
 		go manager.send(client)
+		go manager.close(client)
 	}
 }
 
 func (manager *Manager) listenForConnections() {
 	for {
 		select {
-		case connection := <-manager.register:
-			manager.clients[connection] = true
-			log.Info("Received new connection from " + connection.socket.RemoteAddr().String())
-		case connection := <-manager.unregister:
-			if _, ok := manager.clients[connection]; ok {
-				log.Info("Closed connection for " + connection.socket.RemoteAddr().String())
-				close(connection.data)
-				delete(manager.clients, connection)
+		case client := <-manager.register:
+			manager.clients[client] = true
+			log.Infof("Received new connection from %s", client.socket.RemoteAddr())
+		case client := <-manager.unregister:
+			if _, ok := manager.clients[client]; ok {
+				log.Infof("Closed connection for %s", client.socket.RemoteAddr())
+				close(client.data)
+				close(client.close)
+				delete(manager.clients, client)
 			}
 		}
 	}
@@ -79,8 +75,11 @@ func (manager *Manager) listenForConnections() {
 func (manager *Manager) receive(client *Client) {
 	for {
 		if !client.reader.Scan() {
+			log.Debugf("Unable to read from client %s, closing connection.",
+				client.socket.RemoteAddr())
 			manager.unregister <- client
 			client.socket.Close()
+			return
 		}
 		message := client.reader.Text()
 		if len(message) > 0 {
@@ -96,9 +95,11 @@ func (manager *Manager) send(client *Client) {
 		select {
 		case message, ok := <-client.data:
 			if !ok {
+				log.Debugf("Unable to read from send channel for client %s, stopping goroutine.",
+					client.socket.RemoteAddr())
 				return
 			}
-			log.Debugf("Sending to %s: %s", client.socket.RemoteAddr().String(), message)
+			log.Debugf("Sending to %s: %s", client.socket.RemoteAddr(), message)
 			_, error := client.writer.WriteString(message + "\r\n")
 			if error != nil {
 				log.Error(error)
@@ -107,6 +108,18 @@ func (manager *Manager) send(client *Client) {
 			if error != nil {
 				log.Error(error)
 			}
+		}
+	}
+}
+
+func (manager *Manager) close(client *Client) {
+	for {
+		close, ok := <-client.close
+		if close || !ok {
+			log.Infof("Close requested for client %s (auto: %s)", client.socket.RemoteAddr(), !ok)
+			manager.unregister <- client
+			client.socket.Close()
+			return
 		}
 	}
 }
