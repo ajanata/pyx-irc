@@ -26,12 +26,14 @@ package irc
 import (
 	"bufio"
 	"fmt"
+	"github.com/ajanata/pyx-irc/pyx"
 	"net"
 	"regexp"
 )
 
 var validNickRegex = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]{2,29}$")
 
+// it'd probably be better if this didn't talk directly to the pyx stuff from here...
 type Client struct {
 	socket     net.Conn
 	addr       string
@@ -43,6 +45,7 @@ type Client struct {
 	password   string
 	nick       string
 	hasUser    bool
+	pyx        *pyx.Client
 }
 
 type HandlerFunc func(*Client, Message)
@@ -73,7 +76,6 @@ func NewClient(connection net.Conn) *Client {
 }
 
 func (client *Client) handleIncoming(raw string) {
-	// TODO actual implementation, just echo it back for now
 	msg := NewMessage(raw)
 	if !client.registered {
 		client.handleIncomingUnregistered(msg)
@@ -89,12 +91,36 @@ func (client *Client) handleIncomingUnregistered(msg Message) {
 	} else {
 		handler(client, msg)
 		if client.nick != "" && client.hasUser {
-			log.Debugf("Client %s has fully registered as %s", client.socket.RemoteAddr(), client.nick)
-			// TODO we definitely need to be talking to pyx by now
-			client.registered = true
-			client.sendWelcome()
+			log.Debugf("Client %s has fully registered as %s", client.socket.RemoteAddr(),
+				client.nick)
+			err := client.logInToPyx()
+			if err != nil {
+				log.Errorf("Unable to log in to PYX for %s: %v", client.nick, err)
+				client.disconnect(fmt.Sprintf("PYX error: %s", err))
+			} else {
+				client.registered = true
+				client.sendWelcome()
+			}
 		}
 	}
+}
+
+func (client *Client) logInToPyx() error {
+	log.Debugf("Attempting to log into PYX for %s", client.nick)
+	pyx := pyx.NewClient()
+	err := pyx.Prepare()
+	if err != nil {
+		return err
+	}
+	err = pyx.Login(client.nick, client.password)
+	if err != nil {
+		return err
+	}
+
+	client.pyx = pyx
+	go client.dispatchPyxEvents()
+	log.Infof("Logged in to PYX for %s", client.nick)
+	return nil
 }
 
 func (client *Client) handleIncomingRegistered(msg Message) {
@@ -113,7 +139,7 @@ func handleUnregisteredNick(client *Client, msg Message) {
 		// TODO talk to pyx anyway so we can get the error message it gives?
 		if validNickRegex.MatchString(msg.args[0]) {
 			client.nick = msg.args[0]
-			// TODO talk to pyx to verify it
+			// TODO talk to pyx to verify it?
 		} else {
 			client.data <- formatSimpleReply(ErrErroneousNickname, msg.cmd, "Erroneous Nickname")
 		}
@@ -145,15 +171,26 @@ func handleMotd(client *Client, msg Message) {
 	client.data <- formatSimpleReply(ErrNoMotd, client.nick, "No MOTD configured.")
 }
 
-func handleQuit(client *Client, msg Message) {
-	s := fmt.Sprintf("ERROR :Closing Link: %s[%s] (Quit: %s)", client.nick, client.addr,
-		client.nick)
+func (client *Client) disconnect(why string) {
+	s := fmt.Sprintf("ERROR :Closing Link: %s[%s] (%s)", client.nick, client.addr, why)
 	// have to do this differently to ensure the client actually gets this before we close the
 	// connection
 	client.writer.WriteString(s + "\r\n")
 	client.writer.Flush()
 
 	client.close <- true
+
+	if client.pyx != nil {
+		// disregard result since we're throwing the user away anyway
+		client.pyx.Send(map[string]string{
+			pyx.AjaxRequest_OP: pyx.AjaxOperation_LOG_OUT,
+		})
+		client.pyx.Close()
+	}
+}
+
+func handleQuit(client *Client, msg Message) {
+	client.disconnect(fmt.Sprintf("Quit: %s", client.nick))
 }
 
 func (client *Client) sendWelcome() {
@@ -183,4 +220,26 @@ func (client *Client) sendLUser() {
 	client.data <- formatFmt(RplLocalUsers, client.nick, ":Current Local Users: %d  Max: %d", 1, 1)
 	client.data <- formatFmt(RplGlobalUsers, client.nick, ":Current Global Users: %d  Max: %d", 1,
 		1)
+}
+
+// handle the PYX stuff coming in
+
+func (client *Client) dispatchPyxEvents() {
+	defer func() {
+		// this is dumb and really should be refactored to avoid
+		if r := recover(); r != nil {
+			log.Warningf("Recovered from panic, probably due to user quitting: %v", r)
+		}
+	}()
+	for {
+		event, ok := <-client.pyx.IncomingEvents
+		if !ok {
+			log.Infof("PYX event channel closed for %s", client.nick)
+			client.disconnect("Disconnected from PYX.")
+			return
+		}
+
+		// TODO actually dispatch this somehow
+		client.data <- fmt.Sprintf(":Xyzzy PRIVMSG %s :%s", client.nick, event)
+	}
 }
