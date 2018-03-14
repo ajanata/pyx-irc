@@ -29,6 +29,7 @@ import (
 	"gopkg.in/resty.v1"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,7 +41,8 @@ var globalChatEnabledRegex = regexp.MustCompile("cah.GLOBAL_CHAT_ENABLED = (true
 
 type Client struct {
 	GlobalChatEnabled bool
-	IncomingEvents    chan map[string]interface{}
+	IncomingEvents    chan *LongPollResponse
+	User              *User
 	stop              chan bool
 	pollWg            sync.WaitGroup
 	http              *resty.Client
@@ -48,10 +50,10 @@ type Client struct {
 	serial            int
 }
 
-func NewClient() *Client {
+func NewClient(nick string, idcode string) (*Client, error) {
 	client := &Client{
-		IncomingEvents: make(chan map[string]interface{}),
-		stop:           make(chan bool),
+		IncomingEvents: make(chan *LongPollResponse),
+		stop:           make(chan bool, 1),
 		http:           resty.New(),
 	}
 
@@ -62,7 +64,11 @@ func NewClient() *Client {
 		SetRetryCount(3).
 		SetTimeout(time.Duration(1 * time.Minute))
 
-	return client
+	err := client.prepare()
+	if err != nil {
+		return client, err
+	}
+	return client, client.login(nick, idcode)
 }
 
 // long poll goroutine
@@ -80,7 +86,7 @@ func (client *Client) receive() {
 				Post("/LongPollServlet")
 
 			if err != nil {
-				log.Errorf("Long poll for session %s received error: %v", client.sessionId, err)
+				log.Errorf("Long poll for session %s received error: %+v", client.sessionId, err)
 				// order matters here!
 				client.pollWg.Done()
 				client.Close()
@@ -88,44 +94,57 @@ func (client *Client) receive() {
 			}
 
 			var res interface{}
-			err = json.Unmarshal(resp.Body(), &res)
+			// this is dumb but I can't figure out another way to do it
+			if strings.HasPrefix(resp.String(), "[") {
+				// array of LongPollResponse
+				var t []*LongPollResponse
+				err = json.Unmarshal(resp.Body(), &t)
+				res = t
+			} else {
+				var t *LongPollResponse
+				err = json.Unmarshal(resp.Body(), &t)
+				res = t
+			}
 
-			log.Debugf("Result: %v", res)
+			log.Debugf("Result: %+v", res)
 			switch v := res.(type) {
-			case map[string]interface{}:
+			case *LongPollResponse:
 				// bare object, likely an error or no-op
 				singleResult := v
-				err = checkForError(singleResult, err)
+				err = checkPollForError(singleResult, err)
 				if err != nil {
-					log.Errorf("Long poll for session %s received error: %v", client.sessionId, err)
+					log.Errorf("Long poll for session %s received error: %+v", client.sessionId,
+						err)
 					// order matters here!
 					client.pollWg.Done()
 					client.Close()
 					return
 				}
 				client.dispatchSinglePyxEvent(singleResult)
-			case []interface{}:
+			case []*LongPollResponse:
 				// array of objects, so can't be an error
 				for _, event := range v {
-					client.dispatchSinglePyxEvent(event.(map[string]interface{}))
+					client.dispatchSinglePyxEvent(event)
 				}
 			default:
-				log.Errorf("No idea what the type of this is: %v", res)
+				log.Errorf("No idea what the type of this is: %+v", res)
 			}
 		}
 	}
 }
 
-func (client *Client) dispatchSinglePyxEvent(event map[string]interface{}) {
-	// TODO handle the NOOP event here?
-	log.Debugf("Received long poll for session %s: %v", client.sessionId, event)
+func (client *Client) dispatchSinglePyxEvent(event *LongPollResponse) {
+	log.Debugf("Received long poll for session %s: %+v", client.sessionId, event)
+	if event.Event == LongPollEvent_NOOP {
+		return
+	}
 	client.IncomingEvents <- event
 }
 
 // Make initial contact with PYX and obtain a session. Obtain server configuration information.
 // Does not log in. Logging in should be done within half a minute of this call so that the session
 // does not expire.
-func (client *Client) Prepare() error {
+func (client *Client) prepare() error {
 	resp, err := client.http.NewRequest().Get("/game.jsp")
 	if err != nil {
 		return err
@@ -154,17 +173,17 @@ func (client *Client) Prepare() error {
 		return err
 	}
 	// TODO save the card sets somewhere
-	inProg, ok := flResp[AjaxResponse_IN_PROGRESS]
-	if ok && inProg.(bool) {
+	if flResp.InProgress {
 		return fmt.Errorf("Session %s already in progress, not yet implemented (next=%s)",
-			client.sessionId, flResp[AjaxResponse_NEXT])
+			client.sessionId, flResp.Next)
 	}
+	log.Debugf("Cards: %+v", flResp.CardSets)
 
 	return nil
 }
 
 // Log in to the server and start the long poll goroutine
-func (client *Client) Login(nick string, idcode string) error {
+func (client *Client) login(nick string, idcode string) error {
 	// TODO persistent ID?
 	req := map[string]string{
 		AjaxRequest_OP:       AjaxOperation_REGISTER,
@@ -179,13 +198,15 @@ func (client *Client) Login(nick string, idcode string) error {
 		return err
 	}
 
+	client.User = newUser(resp.Nickname, resp.Sigil, resp.IdCode)
+
 	go client.receive()
 
 	return nil
 }
 
 // Make the request on the server, and check for PYX application errors.
-func (client *Client) Send(request map[string]string) (map[string]interface{}, error) {
+func (client *Client) Send(request map[string]string) (*AjaxResponse, error) {
 	resp, err := client.sendNoErrorCheck(request)
 	return resp, checkForError(resp, err)
 }
@@ -193,19 +214,28 @@ func (client *Client) Send(request map[string]string) (map[string]interface{}, e
 // Check for an error condition in a server response. If the passed in reqError is not nil, that is
 // returned directly. Otherwise, if the ERROR field in response is true, an error containing the
 // ErrorCodeMsg for the ERROR_CODE is returned. If neither of these are true, then nil is returned.
-func checkForError(response map[string]interface{}, reqError error) error {
+func checkForError(response *AjaxResponse, reqError error) error {
 	if reqError != nil {
 		return reqError
 	}
-	errVal, ok := response[AjaxResponse_ERROR]
-	if ok && errVal.(bool) {
-		return fmt.Errorf("PYX error: %s",
-			ErrorCodeMsgs[response[AjaxResponse_ERROR_CODE].(string)])
+	if response.Error {
+		return fmt.Errorf("PYX error: %s", ErrorCodeMsgs[response.ErrorCode])
 	}
 	return nil
 }
 
-func (client *Client) sendNoErrorCheck(request map[string]string) (map[string]interface{}, error) {
+// Same as checkForError but for long polls instead of requests.
+func checkPollForError(response *LongPollResponse, reqError error) error {
+	if reqError != nil {
+		return reqError
+	}
+	if response.Error {
+		return fmt.Errorf("PYX error: %s", ErrorCodeMsgs[response.ErrorCode])
+	}
+	return nil
+}
+
+func (client *Client) sendNoErrorCheck(request map[string]string) (*AjaxResponse, error) {
 	// make a copy of the input
 	reqCopy := make(map[string]string)
 	for k, v := range request {
@@ -215,14 +245,14 @@ func (client *Client) sendNoErrorCheck(request map[string]string) (map[string]in
 	client.serial++
 
 	resp, err := client.http.NewRequest().
-		SetResult(map[string]interface{}{}).
+		SetResult(AjaxResponse{}).
 		SetFormData(reqCopy).Post("/AjaxServlet")
 	if err != nil {
-		log.Errorf("Request %v failed: %v", request, err)
+		log.Errorf("Request %+v failed: %+v", request, err)
 		// TODO do we have to return here or will the Result call always do something sane enough?
 	}
 
-	return *(resp.Result().(*map[string]interface{})), err
+	return resp.Result().(*AjaxResponse), err
 }
 
 func (client *Client) Close() {
@@ -231,4 +261,5 @@ func (client *Client) Close() {
 	close(client.stop)
 	client.pollWg.Wait()
 	close(client.IncomingEvents)
+	log.Infof("Client for session %s stopped", client.sessionId)
 }

@@ -26,5 +26,19 @@ package pyx
 import ()
 
 type User struct {
-	name string
+	Name   string
+	Sigil  string
+	IdCode string
+}
+
+func newUser(name string, sigil string, idCode string) *User {
+	return &User{
+		Name:   name,
+		Sigil:  sigil,
+		IdCode: idCode,
+	}
+}
+
+func (user *User) IsAdmin() bool {
+	return user.Sigil == Sigil_ADMIN
 }

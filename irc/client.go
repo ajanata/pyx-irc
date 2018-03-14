@@ -96,7 +96,7 @@ func (client *Client) handleIncomingUnregistered(msg Message) {
 			err := client.logInToPyx()
 			if err != nil {
 				log.Errorf("Unable to log in to PYX for %s: %v", client.nick, err)
-				client.disconnect(fmt.Sprintf("PYX error: %s", err))
+				client.disconnect(err.Error())
 			} else {
 				client.registered = true
 				client.sendWelcome()
@@ -107,12 +107,7 @@ func (client *Client) handleIncomingUnregistered(msg Message) {
 
 func (client *Client) logInToPyx() error {
 	log.Debugf("Attempting to log into PYX for %s", client.nick)
-	pyx := pyx.NewClient()
-	err := pyx.Prepare()
-	if err != nil {
-		return err
-	}
-	err = pyx.Login(client.nick, client.password)
+	pyx, err := pyx.NewClient(client.nick, client.password)
 	if err != nil {
 		return err
 	}
@@ -134,7 +129,7 @@ func (client *Client) handleIncomingRegistered(msg Message) {
 
 func handleUnregisteredNick(client *Client, msg Message) {
 	if len(msg.args) < 1 {
-		client.data <- formatSimpleReply(ErrNeedMoreParams, msg.cmd, "Not enough parameters")
+		client.data <- formatSimpleReply(ErrNoNicknameGiven, msg.cmd, "No nickname given")
 	} else {
 		// TODO talk to pyx anyway so we can get the error message it gives?
 		if validNickRegex.MatchString(msg.args[0]) {
@@ -154,6 +149,8 @@ func handleUnregisteredPass(client *Client, msg Message) {
 	if len(msg.args) < 1 {
 		client.data <- formatSimpleReply(ErrNeedMoreParams, msg.cmd, "Not enough parameters")
 	} else {
+		// FIXME pyx has a length requirement on this, we probably should check it here and report
+		// the error now instead of after the nick/pass combination
 		client.password = msg.args[0]
 	}
 }

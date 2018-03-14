@@ -51,6 +51,22 @@ const (
 	AjaxRequest_ID_CODE       = "idc"
 )
 
+type AjaxRequest struct {
+	Serial       int            `json:"s"`
+	Op           string         `json:"o"`
+	Wall         bool           `json:"wall"`
+	PersistentId string         `json:"pid"`
+	Emote        bool           `json:"me"`
+	CardcastId   string         `json:"cci"`
+	GameId       int            `json:"gid"`
+	GameOptions  GameOptionData `json:"go"`
+	Message      string         `json:"m"`
+	Nickname     string         `json:"n"`
+	Password     string         `json:"pw"`
+	CardId       int            `json:"cid"`
+	IdCode       string         `json:"idc"`
+}
+
 // AjaxResponse
 const (
 	AjaxResponse_NAMES                  = "nl"
@@ -81,6 +97,35 @@ const (
 	AjaxResponse_IP_ADDRESS             = "IP"
 )
 
+type AjaxResponse struct {
+	Names                []string       `json:"nl"`
+	ClientName           string         `json:"cn"`
+	PlayerInfo           GamePlayerInfo `json:"pi"`
+	ConnectedAt          int64          `json:"ca"`
+	WhiteCards           []int          `json:"wc"`
+	Hand                 []int          `json:"h"`
+	ErrorCode            string         `json:"ec"`
+	Next                 string         `json:"next"`
+	GameInfo             GameInfo       `json:"gi"`
+	Error                bool           `json:"e"`
+	GameStateDescription string         `json:"gss"`
+	IdCode               string         `json:"idc"`
+	CardSets             []CardSetData  `json:"css"`
+	Serial               int            `json:"s"`
+	PersistentId         string         `json:"pid"`
+	Games                []GameInfo     `json:"gl"`
+	Sigil                string         `json:"?"`
+	GameId               int            `json:"gid"`
+	MaxGames             int            `json:"mg"`
+	InProgress           bool           `json:"ip"`
+	GameOptions          GameOptionData `json:"go"`
+	Nickname             string         `json:"n"`
+	BlackCard            int            `json:"bc"`
+	Idle                 int64          `json:"idl"`
+	CardId               int            `json:"cid"`
+	IpAddress            string         `json:"IP"`
+}
+
 // BlackCardData
 const (
 	BlackCardData_DRAW      = "D"
@@ -89,6 +134,14 @@ const (
 	BlackCardData_ID        = "cid"
 	BlackCardData_WATERMARK = "W"
 )
+
+type BlackCardData struct {
+	Draw      int    `json:"D"`
+	Pick      int    `json:"PK"`
+	Text      string `json:"T"`
+	Id        int    `json:"cid"`
+	Watermark string `json:"W"`
+}
 
 // CardSetData
 const (
@@ -100,6 +153,16 @@ const (
 	CardSetData_ID                   = "cid"
 	CardSetData_WEIGHT               = "w"
 )
+
+type CardSetData struct {
+	WhiteCardsInDeck   int    `json:"wcid"`
+	BlackCardsInDeck   int    `json:"bcid"`
+	CardSetName        string `json:"csn"`
+	CardSetDescription string `json:"csd"`
+	BaseDeck           bool   `json:"bd"`
+	Id                 int    `json:"cid"`
+	Weight             int    `json:"w"`
+}
 
 // DisconnectReason
 const (
@@ -214,6 +277,16 @@ const (
 	GameInfo_HAS_PASSWORD = "hp"
 )
 
+type GameInfo struct {
+	GameOptions GameOptionData `json:"go"`
+	Players     []string       `json:"P"`
+	Spectators  []string       `json:"V"`
+	Host        string         `json:"H"`
+	State       string         `json:"S"`
+	Id          int            `json:"gid"`
+	HasPassword bool           `json:"hp"`
+}
+
 // GameOptionData
 const (
 	GameOptionData_TIMER_MULTIPLIER = "tm"
@@ -225,12 +298,28 @@ const (
 	GameOptionData_CARD_SETS        = "css"
 )
 
+type GameOptionData struct {
+	TimerMultiplier string `json:"tm"`
+	Password        string `json:"pw"`
+	SpectatorLimit  int    `json:"vL"`
+	ScoreLimit      int    `json:"sl"`
+	BlanksLimit     int    `json:"bl"`
+	PlayerLimit     int    `json:"pL"`
+	CardSets        []int  `json:"css"`
+}
+
 // GamePlayerInfo
 const (
 	GamePlayerInfo_STATUS = "st"
 	GamePlayerInfo_SCORE  = "sc"
 	GamePlayerInfo_NAME   = "N"
 )
+
+type GamePlayerInfo struct {
+	Status string `json:"st"`
+	Score  int    `json:"sc"`
+	Name   string `json:"N"`
+}
 
 // GamePlayerStatus
 const (
@@ -339,6 +428,34 @@ const (
 	LongPollResponse_INTERMISSION       = "i"
 )
 
+type LongPollResponse struct {
+	PlayTimer        int              `json:"Pt"`
+	PlayerInfo       []GamePlayerInfo `json:"pi"`
+	From             string           `json:"f"`
+	WhiteCards       []WhiteCardData  `json:"wc"`
+	Event            string           `json:"E"`
+	Hand             []WhiteCardData  `json:"h"`
+	ErrorCode        string           `json:"ec"`
+	Message          string           `json:"m"`
+	WinningCard      WhiteCardData    `json:"WC"`
+	FromAdmin        bool             `json:"fa"`
+	Timestamp        int64            `json:"ts"`
+	GameInfo         GameInfo         `json:"gi"`
+	Error            bool             `json:"e"`
+	IdCode           string           `json:"idc"`
+	Reason           string           `json:"qr"`
+	Wall             bool             `json:"wall"`
+	RoundWinner      string           `json:"rw"`
+	Sigil            string           `json:"?"`
+	Emote            bool             `json:"me"`
+	CardcastDeckInfo string           `json:"cdi"`
+	GameId           int              `json:"gid"`
+	Nickname         string           `json:"n"`
+	BlackCard        BlackCardData    `json:"bc"`
+	GameState        string           `json:"gs"`
+	Intermission     int              `json:"i"`
+}
+
 // ReconnectNextAction
 const (
 	ReconnectNextAction_GAME = "game"
@@ -359,3 +476,10 @@ const (
 	WhiteCardData_ID        = "cid"
 	WhiteCardData_WATERMARK = "W"
 )
+
+type WhiteCardData struct {
+	WriteIn   bool   `json:"wi"`
+	Text      string `json:"T"`
+	Id        int    `json:"cid"`
+	Watermark string `json:"W"`
+}

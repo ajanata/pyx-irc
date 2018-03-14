@@ -25,7 +25,6 @@ package main
 
 import (
 	"github.com/ajanata/pyx-irc/irc"
-	//	"github.com/ajanata/pyx-irc/pyx"
 	"github.com/op/go-logging"
 	"net/http"
 	_ "net/http/pprof"
