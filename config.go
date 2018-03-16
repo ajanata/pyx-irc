@@ -44,7 +44,7 @@ func loadConfig() *Config {
 }
 
 func (config *Config) EnsureDefaults() {
-	for i, _ := range config.Servers {
+	for i := range config.Servers {
 		(&config.Servers[i]).EnsureDefaults()
 	}
 }
