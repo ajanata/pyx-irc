@@ -37,6 +37,8 @@ var validNickRegex = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]{2,29}$")
 
 const GlobalChannel = "#global"
 const BotNick = "Xyzzy"
+const BotUsername = "xyzzy"
+const BotNickUserAtHost = "Xyzzy!xyzzy@" + MyServerName
 
 // it'd probably be better if this didn't talk directly to the pyx stuff from here...
 type Client struct {
@@ -53,25 +55,36 @@ type Client struct {
 	pyx        *pyx.Client
 }
 
-type HandlerFunc func(*Client, Message)
+type IrcHandlerFunc func(*Client, Message)
 
-var UnregisteredHandlers = map[string]HandlerFunc{
+var UnregisteredHandlers = map[string]IrcHandlerFunc{
 	"CAP":  handleCap,
 	"NICK": handleUnregisteredNick,
 	"PASS": handleUnregisteredPass,
 	"USER": handleUnregisteredUser,
 }
-var RegisteredHandlers = map[string]HandlerFunc{
-	"CAP":   handleCap,
-	"MODE":  handleMode,
-	"MOTD":  handleMotd,
-	"NAMES": handleNames,
-	"NICK":  handleRegisteredNick,
-	"PASS":  handleRegisteredPassOrUser,
-	"PING":  handlePing,
-	"QUIT":  handleQuit,
-	"TOPIC": handleTopic,
-	"USER":  handleRegisteredPassOrUser,
+var RegisteredHandlers = map[string]IrcHandlerFunc{
+	"CAP":     handleCap,
+	"MODE":    handleMode,
+	"MOTD":    handleMotd,
+	"NAMES":   handleNames,
+	"NICK":    handleRegisteredNick,
+	"PASS":    handleRegisteredPassOrUser,
+	"PING":    handlePing,
+	"PRIVMSG": handlePrivmsg,
+	"QUIT":    handleQuit,
+	"TOPIC":   handleTopic,
+	"USER":    handleRegisteredPassOrUser,
+	"WHO":     handleWho,
+}
+
+type Event = pyx.LongPollResponse
+type EventHandlerFunc func(*Client, Event)
+
+var EventHandlers = map[string]EventHandlerFunc{
+	pyx.LongPollEvent_CHAT:         eventChat,
+	pyx.LongPollEvent_NEW_PLAYER:   eventNewPlayer,
+	pyx.LongPollEvent_PLAYER_LEAVE: eventPlayerQuit,
 }
 
 func NewClient(connection net.Conn) *Client {
@@ -250,16 +263,14 @@ func (client *Client) joinChannel(channel string) error {
 	if channel != GlobalChannel {
 		// TODO actually join the game on pyx
 	}
-	client.data <- fmt.Sprintf(":%s JOIN :%s", client.nick, channel)
+	client.data <- fmt.Sprintf(":%s JOIN :%s", getNickUserAtHost(client.nick), channel)
 
 	handleTopicImpl(client, channel)
-
 	handleNamesImpl(client, channel)
-
 	// unreal doesn't shove these down automatically but... why not
 	handleModeImpl(client, channel)
 
-	client.data <- fmt.Sprintf(":%s PRIVMSG %s :hello!", BotNick, channel)
+	client.data <- fmt.Sprintf(":%s PRIVMSG %s :hello!", BotNickUserAtHost, channel)
 
 	return nil
 }
@@ -327,18 +338,19 @@ func handleMode(client *Client, msg Message) {
 }
 
 func handleModeImpl(client *Client, args ...string) {
-	// TODO handle if the user is trying to chage modes
+	// TODO handle if the user is trying to change modes
 	if len(args) == 0 {
 		client.data <- formatFmt(ErrNeedMoreParams, client.nick, "MODE :Not enough parameters")
 	} else if strings.HasPrefix(args[0], "#") {
 		if len(args) == 1 {
 			var modes string
 			if args[0] == GlobalChannel {
-				// TODO it'd be nice to know if join/quit is being broadcast, if they are we can +n too
-				if client.pyx.GlobalChatEnabled {
-					modes = "+t"
-				} else {
-					modes = "+mt"
+				modes = "+t"
+				if !client.pyx.GlobalChatEnabled {
+					modes = modes + "m"
+				}
+				if client.pyx.BroadcastingUsers {
+					modes = modes + "n"
 				}
 			} else {
 				// TODO we need game info here too for limit and key and stuff
@@ -349,9 +361,16 @@ func handleModeImpl(client *Client, args ...string) {
 			client.data <- formatFmt(RplCreationTime, client.nick, "%s %d", args[0],
 				time.Now().Unix())
 		} else {
-			// TODO handle if the user is trying to chage modes
-			// TODO but if they are the game host, we need to let them change some of the settings
-			client.data <- formatFmt(ErrChanOpPrivsNeeded, client.nick, "MODE :You can't do that.")
+			if args[1] == "b" {
+				// irssi likes to request the ban list
+				client.data <- formatFmt(RplEndOfBanList, client.nick,
+					"%s :End of Channel Ban List", args[0])
+			} else {
+				// TODO handle if the user is trying to change modes
+				// TODO but if they are the game host, they could change some of the settings
+				client.data <- formatFmt(ErrChanOpPrivsNeeded, client.nick,
+					"MODE :You can't do that.")
+			}
 		}
 	} else if args[0] == client.nick {
 		if len(args) == 1 {
@@ -383,6 +402,70 @@ func handlePing(client *Client, msg Message) {
 	client.data <- fmt.Sprintf(":%s PONG %s :%s", MyServerName, MyServerName, arg)
 }
 
+func handleWho(client *Client, msg Message) {
+	if len(msg.args) == 0 || msg.args[0] == GlobalChannel {
+		names, err := client.pyx.GetNames()
+		if err != nil {
+			log.Errorf("Unable to retrieve names for %s: %v", GlobalChannel, err)
+		}
+
+		client.data <- formatFmt(RplWho, client.nick, "%s %s %s %s %s HrB& :0 %s", GlobalChannel,
+			BotUsername, MyServerName, MyServerName, BotNick, BotNick)
+		for _, name := range names {
+			modes := "H"
+			if name[0:1] == pyx.Sigil_ADMIN {
+				// technically admins might not be using an id code but we can't tell the difference
+				// here
+				modes = modes + "r"
+			}
+			if name[0:1] == pyx.Sigil_ID_CODE {
+				modes = modes + "r"
+			}
+			// this doesn't apply to the server-wide who variant
+			if len(msg.args) > 0 && name[0:1] == pyx.Sigil_ADMIN || name[0:1] == pyx.Sigil_ID_CODE {
+				modes = modes + name[0:1]
+				name = name[1:]
+			}
+
+			client.data <- formatFmt(RplWho, client.nick, "%s %s %s %s %s %s :0 %s", GlobalChannel,
+				getUser(name), getHost(name), MyServerName, name, modes, name)
+		}
+
+		target := "*"
+		if len(msg.args) > 0 {
+			target = GlobalChannel
+		}
+		client.data <- formatFmt(RplEndOfWho, client.nick, "%s :End of /WHO list", target)
+	} else {
+		// TODO per-game channels
+	}
+}
+
+func handlePrivmsg(client *Client, msg Message) {
+	if len(msg.args) == 0 {
+		client.data <- formatFmt(ErrNeedMoreParams, client.nick, "PRIVMSG :Not enough parameters")
+		return
+	}
+	// TODO game chats
+	if msg.args[0] != GlobalChannel {
+		// unreal uses this for either
+		client.data <- formatFmt(ErrNoSuchNick, client.nick, "%s :No such nick/channel",
+			msg.args[0])
+		return
+	}
+	if len(msg.args) == 1 || len(msg.args[1]) == 0 {
+		client.data <- formatFmt(ErrNoTextToSend, client.nick, ":No text to send")
+		return
+	}
+
+	action, text := isEmote(msg.args[1])
+	err := client.pyx.SendGlobalChat(text, action)
+	if err != nil {
+		client.data <- fmt.Sprintf(":%s PRIVMSG %s :Unable to send previous chat: %s",
+			BotNickUserAtHost, msg.args[0], err)
+	}
+}
+
 // handle the PYX stuff coming in
 
 func (client *Client) dispatchPyxEvents() {
@@ -400,7 +483,72 @@ func (client *Client) dispatchPyxEvents() {
 			return
 		}
 
-		// TODO actually dispatch this somehow
-		client.data <- fmt.Sprintf(":%s PRIVMSG %s :%v", BotNick, client.nick, event)
+		handler, ok := EventHandlers[event.Event]
+		if !ok {
+			client.data <- fmt.Sprintf(":%s PRIVMSG %s :%v", BotNickUserAtHost, client.nick, event)
+		} else {
+			handler(client, *event)
+		}
 	}
+}
+
+func eventNewPlayer(client *Client, event Event) {
+	if event.Nickname == client.pyx.User.Name {
+		// we don't care about seeing ourselves connect
+		return
+	}
+	// TODO we need to do something for a hostname for them
+	client.data <- fmt.Sprintf(":%s JOIN :%s", getNickUserAtHost(event.Nickname), GlobalChannel)
+	mode := "+"
+	modeNames := ""
+	if event.Sigil == pyx.Sigil_ADMIN {
+		mode = mode + "o"
+		modeNames = event.Nickname
+	}
+	if len(event.IdCode) > 0 {
+		mode = mode + "v"
+		modeNames = modeNames + " " + event.Nickname
+	}
+	if len(mode) > 1 {
+		client.data <- fmt.Sprintf(":%s MODE %s %s %s", BotNickUserAtHost, GlobalChannel, mode,
+			strings.TrimSpace(modeNames))
+	}
+}
+
+func eventPlayerQuit(client *Client, event Event) {
+	if event.Nickname == client.pyx.User.Name {
+		// we don't care about seeing ourselves disconnect
+		// TODO unless we got kicked or banned
+		// actually those are different events entirely
+		return
+	}
+	client.data <- fmt.Sprintf(":%s QUIT :%s", getNickUserAtHost(event.Nickname),
+		pyx.DisconnectReasonMsgs[event.Reason])
+}
+
+func eventChat(client *Client, event Event) {
+	if event.From == client.pyx.User.Name {
+		// don't show our own chat
+		return
+	}
+	if event.Wall {
+		// global notice from admin, handle this completely differently
+		client.data <- fmt.Sprintf(":%s NOTICE %s :Global notice: %s",
+			getNickUserAtHost(event.From), client.nick, event.Message)
+		return
+	}
+
+	var target string
+	// game chat is the same event, but has the game id field
+	if event.GameId != nil {
+		// TODO game chat
+		// but we can't get game chat until we can join a game so don't worry about it yet
+	} else {
+		target = GlobalChannel
+	}
+	text := event.Message
+	if event.Emote {
+		text = makeEmote(text)
+	}
+	client.data <- fmt.Sprintf(":%s PRIVMSG %s :%s", getNickUserAtHost(event.From), target, text)
 }

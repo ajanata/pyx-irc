@@ -173,6 +173,14 @@ const (
 	DisconnectReason_MANUAL       = "man"
 )
 
+var DisconnectReasonMsgs = map[string]string{
+	"B&":  "Banned",
+	"pt":  "Ping timeout",
+	"it":  "Kicked due to idle",
+	"k":   "Kicked by server administrator",
+	"man": "Leaving",
+}
+
 // ErrorCode
 const (
 	ErrorCode_INVALID_NICK             = "in"
@@ -449,7 +457,7 @@ type LongPollResponse struct {
 	Sigil            string           `json:"?"`
 	Emote            bool             `json:"me"`
 	CardcastDeckInfo string           `json:"cdi"`
-	GameId           int              `json:"gid"`
+	GameId           *int             `json:"gid"`
 	Nickname         string           `json:"n"`
 	BlackCard        BlackCardData    `json:"bc"`
 	GameState        string           `json:"gs"`

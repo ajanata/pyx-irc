@@ -25,7 +25,10 @@ package irc
 
 import (
 	"fmt"
+	"strings"
 )
+
+const CtcpMagic byte = 1
 
 // Assemble the values in pieces into one or more space-separated strings, with no more than
 // charsPerLine characters per line.
@@ -45,4 +48,34 @@ func joinIntoLines(charsPerLine int, pieces []string) []string {
 		}
 	}
 	return append(ret, curLine)
+}
+
+func getNickUserAtHost(nick string) string {
+	return fmt.Sprintf("%s!%s@%s", nick, getUser(nick), getHost(nick))
+}
+
+func getUser(nick string) string {
+	user := nick
+	if len(user) > 10 {
+		user = user[:10]
+	}
+	return strings.ToLower(user)
+}
+
+func getHost(nick string) string {
+	// TODO unique hosts per user? idk.
+	return "users." + MyServerName
+}
+
+func isEmote(msg string) (bool, string) {
+	if msg[0] == CtcpMagic && msg[len(msg)-1] == CtcpMagic && len(msg) > len("ACTION")+2 &&
+		msg[1:len("ACTION")+1] == "ACTION" {
+		return true, msg[len("ACTION")+2 : len(msg)-1]
+	}
+	return false, msg
+}
+
+func makeEmote(msg string) string {
+	log.Debugf("Converting to emote: %s", msg)
+	return fmt.Sprintf("%cACTION %s%c", CtcpMagic, msg, CtcpMagic)
 }

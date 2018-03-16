@@ -49,6 +49,8 @@ const RplTopicWhoTime = "333"
 const RplWho = "352"
 const RplNames = "353"
 const RplEndNames = "366"
+const RplBanList = "367"
+const RplEndOfBanList = "368"
 
 // errors
 const ErrNoSuchNick = "401"

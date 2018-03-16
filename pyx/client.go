@@ -37,9 +37,13 @@ import (
 // FIXME config
 const PyxBaseUrl = "http://loopback.pretendyoure.xyz:8080/"
 
+const NoGameIdSentinel = -1
+
 var globalChatEnabledRegex = regexp.MustCompile("cah.GLOBAL_CHAT_ENABLED = (true|false);")
+var broadcastingUsersRegex = regexp.MustCompile("cah.BROADCASTING_USERS = (true|false);")
 
 type Client struct {
+	BroadcastingUsers bool
 	GlobalChatEnabled bool
 	IncomingEvents    chan *LongPollResponse
 	User              *User
@@ -165,6 +169,10 @@ func (client *Client) prepare() error {
 	if len(matches) > 1 {
 		client.GlobalChatEnabled, _ = strconv.ParseBool(matches[1])
 	}
+	matches = broadcastingUsersRegex.FindStringSubmatch(resp.String())
+	if len(matches) > 1 {
+		client.BroadcastingUsers, _ = strconv.ParseBool(matches[1])
+	}
 
 	flResp, err := client.send(map[string]string{
 		AjaxRequest_OP: AjaxOperation_FIRST_LOAD,
@@ -213,6 +221,29 @@ func (client *Client) GetNames() ([]string, error) {
 		return []string{}, err
 	}
 	return resp.Names, nil
+}
+
+func (client *Client) SendGlobalChat(msg string, emote bool) error {
+	return client.sendChat(msg, emote, false, NoGameIdSentinel)
+}
+
+func (client *Client) sendChat(msg string, emote bool, wall bool, gameId int) error {
+	req := map[string]string{
+		AjaxRequest_OP:      AjaxOperation_CHAT,
+		AjaxRequest_MESSAGE: msg,
+	}
+	if emote {
+		req[AjaxRequest_EMOTE] = "true"
+	}
+	if wall {
+		req[AjaxRequest_WALL] = "true"
+	}
+	if gameId >= 0 {
+		req[AjaxRequest_GAME_ID] = strconv.Itoa(gameId)
+	}
+
+	_, err := client.send(req)
+	return err
 }
 
 func (client *Client) LogOut() {
