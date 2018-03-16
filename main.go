@@ -39,13 +39,16 @@ func main() {
 	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
 	logging.SetBackend(formattedStdErr)
 
-	loadConfig()
+	config := loadConfig()
 
 	go func() {
 		log.Info(http.ListenAndServe("localhost:6680", nil))
 	}()
 
-	go irc.StartServer()
+	for _, server := range config.Servers {
+		log.Debugf("server config: %+v", server)
+		go irc.StartServer(server)
+	}
 
 	select {}
 }

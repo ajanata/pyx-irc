@@ -34,9 +34,6 @@ import (
 	"time"
 )
 
-// FIXME config
-const PyxBaseUrl = "http://loopback.pretendyoure.xyz:8080/"
-
 const NoGameIdSentinel = -1
 
 var globalChatEnabledRegex = regexp.MustCompile("cah.GLOBAL_CHAT_ENABLED = (true|false);")
@@ -53,19 +50,21 @@ type Client struct {
 	http              *resty.Client
 	sessionId         string
 	serial            int
+	config            *Config
 }
 
-func NewClient(nick string, idcode string) (*Client, error) {
+func NewClient(nick string, idcode string, config *Config) (*Client, error) {
 	client := &Client{
 		IncomingEvents: make(chan *LongPollResponse),
 		stop:           make(chan bool, 1),
 		http:           resty.New(),
+		config:         config,
 	}
 
 	client.http.
 		SetDebug(true).
 		SetHeader("User-Agent", "PYX-IRC").
-		SetHostURL(PyxBaseUrl).
+		SetHostURL(config.BaseAddress).
 		SetRetryCount(3).
 		SetTimeout(time.Duration(1 * time.Minute))
 

@@ -50,8 +50,8 @@ func joinIntoLines(charsPerLine int, pieces []string) []string {
 	return append(ret, curLine)
 }
 
-func getNickUserAtHost(nick string) string {
-	return fmt.Sprintf("%s!%s@%s", nick, getUser(nick), getHost(nick))
+func getNickUserAtHost(nick string, client *Client) string {
+	return fmt.Sprintf("%s!%s@%s", nick, getUser(nick), getHost(nick, client))
 }
 
 func getUser(nick string) string {
@@ -62,9 +62,9 @@ func getUser(nick string) string {
 	return strings.ToLower(user)
 }
 
-func getHost(nick string) string {
+func getHost(nick string, client *Client) string {
 	// TODO unique hosts per user? idk.
-	return "users." + MyServerName
+	return "users." + client.config.AdvertisedName
 }
 
 func isEmote(msg string) (bool, string) {

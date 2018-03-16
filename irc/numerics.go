@@ -76,10 +76,19 @@ const ErrChannelIsFull = "471"
 const ErrBadChannelKey = "475"
 const ErrChanOpPrivsNeeded = "482"
 
-func formatSimpleReply(numeric string, target string, msg string) string {
-	return formatFmt(numeric, target, ":%s", msg)
+type numerics struct {
+	config *Config
 }
 
-func formatFmt(numeric string, target string, format string, args ...interface{}) string {
-	return fmt.Sprintf(":%s %s %s %s", MyServerName, numeric, target, fmt.Sprintf(format, args...))
+func newNumerics(config *Config) *numerics {
+	return &numerics{config: config}
+}
+
+func (n *numerics) formatSimpleReply(numeric string, target string, msg string) string {
+	return n.format(numeric, target, ":%s", msg)
+}
+
+func (n *numerics) format(numeric string, target string, format string, args ...interface{}) string {
+	return fmt.Sprintf(":%s %s %s %s", n.config.AdvertisedName, numeric, target,
+		fmt.Sprintf(format, args...))
 }

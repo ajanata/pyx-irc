@@ -26,20 +26,18 @@ package irc
 import (
 	"github.com/op/go-logging"
 	"net"
+	"strconv"
 )
 
 var log = logging.MustGetLogger("irc")
 
-// FIXME
-const MyServerName = "localhost"
-
-func StartServer() {
-	log.Info("Starting server...")
-	listener, error := net.Listen("tcp", ":6667")
+func StartServer(config Config) {
+	log.Infof("Starting server on %s:%d...", config.BindAddress, config.Port)
+	listener, error := net.Listen("tcp", config.BindAddress+":"+strconv.Itoa(config.Port))
 	if error != nil {
 		log.Error(error)
 		return
 	}
 
-	NewManager(listener)
+	NewManager(listener, &config)
 }

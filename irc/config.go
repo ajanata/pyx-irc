@@ -41,9 +41,7 @@ type Config struct {
 }
 
 func (config *Config) EnsureDefaults() {
-	log.Info("wat")
 	if config.BindAddress == "" {
-		log.Info("???")
 		config.BindAddress = "0.0.0.0"
 	}
 	if config.Port == 0 {

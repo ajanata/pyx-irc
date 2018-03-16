@@ -32,13 +32,15 @@ type Config struct {
 	Servers []irc.Config
 }
 
-func loadConfig() {
+func loadConfig() *Config {
 	m := multiconfig.NewWithPath("pyx-irc.toml")
 	config := new(Config)
 	m.MustLoad(config)
 	config.EnsureDefaults()
 
 	log.Debugf("Config: %+v", config)
+
+	return config
 }
 
 func (config *Config) EnsureDefaults() {

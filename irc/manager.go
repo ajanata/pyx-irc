@@ -33,7 +33,7 @@ type Manager struct {
 	unregister chan *Client
 }
 
-func NewManager(listener net.Listener) {
+func NewManager(listener net.Listener, config *Config) {
 	manager := Manager{
 		clients:    make(map[*Client]bool),
 		register:   make(chan *Client),
@@ -47,7 +47,7 @@ func NewManager(listener net.Listener) {
 			log.Error(error)
 			return
 		}
-		client := NewClient(connection)
+		client := NewClient(connection, config)
 		manager.register <- client
 		go manager.receive(client)
 		go manager.send(client)
