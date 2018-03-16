@@ -27,44 +27,37 @@ import (
 	"testing"
 )
 
-type parserTestPair struct {
-	input string
-	cmd   string
-	args  []string
+type joinLineTestPair struct {
+	input   []string
+	perLine int
+	output  []string
 }
 
-var parserTests = []parserTestPair{
-	{"", "", []string{}},
-	{"nick test", "NICK", []string{"test"}},
-	{"nick    test", "NICK", []string{"test"}},
-	{"   nick    test   ", "NICK", []string{"test"}},
-	{"user test 0 0 :test user", "USER", []string{"test", "0", "0", "test user"}},
-	{"privmsg #test :testing 1 2 3", "PRIVMSG", []string{"#test", "testing 1 2 3"}},
-	{"privmsg   #test    :testing 1 2 3   ", "PRIVMSG", []string{"#test", "testing 1 2 3"}},
-	{"privmsg   #test    :", "PRIVMSG", []string{"#test", ""}},
+var joinLineTests = []joinLineTestPair{
+	{[]string{"a", "b", "c"}, 5, []string{"a b c"}},
+	{[]string{"a", "b", "c"}, 3, []string{"a b", "c"}},
+	{[]string{"a", "b", "c"}, 2, []string{"a", "b", "c"}},
+	{[]string{"a", "b", "c"}, 1, []string{"a", "b", "c"}},
 }
 
-func TestNewMessage(t *testing.T) {
-	for _, test := range parserTests {
-		m := NewMessage(test.input)
-		if m.cmd != test.cmd {
+func TestJoinIntoLines(t *testing.T) {
+	for _, test := range joinLineTests {
+		out := joinIntoLines(test.perLine, test.input)
+		if len(test.output) != len(out) {
+			t.Logf("In: %v, out: %v", test.input, out)
 			t.Error("For", test.input,
-				"expected cmd", test.cmd,
-				"got", m.cmd,
-			)
-		}
-		if len(test.args) != len(m.args) {
-			t.Error("For", test.input,
-				"expected arg length", len(test.args),
-				"got", len(m.args),
+				"max len", test.perLine,
+				"expected output length", len(test.output),
+				"got", len(out),
 			)
 		} else {
-			for i, _ := range test.args {
-				if test.args[i] != m.args[i] {
+			for i, _ := range test.output {
+				if test.output[i] != out[i] {
 					t.Error("For", test.input,
-						"expected arg ", i,
-						"to be", test.args[i],
-						"got", m.args[i],
+						"max len", test.perLine,
+						"expected output ", i,
+						"to be", test.output[i],
+						"got", out[i],
 					)
 				}
 			}

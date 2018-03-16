@@ -33,12 +33,22 @@ const RplYourHost = "002"
 const RplMyInfo = "004"
 const RplISupport = "005"
 
+const RplUModeIs = "221"
 const RplLUserClient = "251"
 const RplLUserOp = "252"
 const RplLUserChannels = "254"
 const RplLUserMe = "255"
 const RplLocalUsers = "265"
 const RplGlobalUsers = "266"
+
+const RplEndOfWho = "315"
+const RplChannelModeIs = "324"
+const RplCreationTime = "329"
+const RplTopic = "332"
+const RplTopicWhoTime = "333"
+const RplWho = "352"
+const RplNames = "353"
+const RplEndNames = "366"
 
 // errors
 const ErrNoSuchNick = "401"
@@ -62,6 +72,7 @@ const ErrAlreadyRegistered = "462"
 const ErrKeySet = "467"
 const ErrChannelIsFull = "471"
 const ErrBadChannelKey = "475"
+const ErrChanOpPrivsNeeded = "482"
 
 func formatSimpleReply(numeric string, target string, msg string) string {
 	return formatFmt(numeric, target, ":%s", msg)

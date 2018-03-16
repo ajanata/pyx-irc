@@ -166,7 +166,7 @@ func (client *Client) prepare() error {
 		client.GlobalChatEnabled, _ = strconv.ParseBool(matches[1])
 	}
 
-	flResp, err := client.Send(map[string]string{
+	flResp, err := client.send(map[string]string{
 		AjaxRequest_OP: AjaxOperation_FIRST_LOAD,
 	})
 	if err != nil {
@@ -192,7 +192,7 @@ func (client *Client) login(nick string, idcode string) error {
 	if len(idcode) > 0 {
 		req[AjaxRequest_ID_CODE] = idcode
 	}
-	resp, err := client.Send(req)
+	resp, err := client.send(req)
 	err = checkForError(resp, err)
 	if err != nil {
 		return err
@@ -205,8 +205,26 @@ func (client *Client) login(nick string, idcode string) error {
 	return nil
 }
 
+func (client *Client) GetNames() ([]string, error) {
+	resp, err := client.send(map[string]string{
+		AjaxRequest_OP: AjaxOperation_NAMES,
+	})
+	if err != nil {
+		return []string{}, err
+	}
+	return resp.Names, nil
+}
+
+func (client *Client) LogOut() {
+	// disregard result since we're throwing the user away anyway
+	client.send(map[string]string{
+		AjaxRequest_OP: AjaxOperation_LOG_OUT,
+	})
+	client.Close()
+}
+
 // Make the request on the server, and check for PYX application errors.
-func (client *Client) Send(request map[string]string) (*AjaxResponse, error) {
+func (client *Client) send(request map[string]string) (*AjaxResponse, error) {
 	resp, err := client.sendNoErrorCheck(request)
 	return resp, checkForError(resp, err)
 }

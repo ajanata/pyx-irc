@@ -29,9 +29,14 @@ import (
 	"github.com/ajanata/pyx-irc/pyx"
 	"net"
 	"regexp"
+	"strings"
+	"time"
 )
 
 var validNickRegex = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]{2,29}$")
+
+const GlobalChannel = "#global"
+const BotNick = "Xyzzy"
 
 // it'd probably be better if this didn't talk directly to the pyx stuff from here...
 type Client struct {
@@ -51,16 +56,22 @@ type Client struct {
 type HandlerFunc func(*Client, Message)
 
 var UnregisteredHandlers = map[string]HandlerFunc{
+	"CAP":  handleCap,
 	"NICK": handleUnregisteredNick,
-	"USER": handleUnregisteredUser,
 	"PASS": handleUnregisteredPass,
+	"USER": handleUnregisteredUser,
 }
 var RegisteredHandlers = map[string]HandlerFunc{
-	"NICK": handleRegisteredNick,
-	"USER": handleRegisteredPassOrUser,
-	"PASS": handleRegisteredPassOrUser,
-	"MOTD": handleMotd,
-	"QUIT": handleQuit,
+	"CAP":   handleCap,
+	"MODE":  handleMode,
+	"MOTD":  handleMotd,
+	"NAMES": handleNames,
+	"NICK":  handleRegisteredNick,
+	"PASS":  handleRegisteredPassOrUser,
+	"PING":  handlePing,
+	"QUIT":  handleQuit,
+	"TOPIC": handleTopic,
+	"USER":  handleRegisteredPassOrUser,
 }
 
 func NewClient(connection net.Conn) *Client {
@@ -107,12 +118,12 @@ func (client *Client) handleIncomingUnregistered(msg Message) {
 
 func (client *Client) logInToPyx() error {
 	log.Debugf("Attempting to log into PYX for %s", client.nick)
-	pyx, err := pyx.NewClient(client.nick, client.password)
+	pyxClient, err := pyx.NewClient(client.nick, client.password)
 	if err != nil {
 		return err
 	}
 
-	client.pyx = pyx
+	client.pyx = pyxClient
 	go client.dispatchPyxEvents()
 	log.Infof("Logged in to PYX for %s", client.nick)
 	return nil
@@ -125,6 +136,12 @@ func (client *Client) handleIncomingRegistered(msg Message) {
 	} else {
 		handler(client, msg)
 	}
+}
+
+func handleCap(client *Client, msg Message) {
+	// we don't support capabilities at all right now
+	// we do this explicitly instead of the default handler since that replies 451 not registered
+	client.data <- formatSimpleReply(ErrUnknownCommand, msg.cmd, "Unsupported command")
 }
 
 func handleUnregisteredNick(client *Client, msg Message) {
@@ -178,11 +195,7 @@ func (client *Client) disconnect(why string) {
 	client.close <- true
 
 	if client.pyx != nil {
-		// disregard result since we're throwing the user away anyway
-		client.pyx.Send(map[string]string{
-			pyx.AjaxRequest_OP: pyx.AjaxOperation_LOG_OUT,
-		})
-		client.pyx.Close()
+		client.pyx.LogOut()
 	}
 }
 
@@ -197,13 +210,27 @@ func (client *Client) sendWelcome() {
 	client.data <- formatFmt(RplYourHost, client.nick, ":Your host is %s, running version TODO",
 		MyServerName)
 	// user modes, channel modes
-	client.data <- formatFmt(RplMyInfo, client.nick, "%s TODO o lvontk", MyServerName)
+	client.data <- formatFmt(RplMyInfo, client.nick, "%s TODO or lvontk", MyServerName)
 	client.data <- formatFmt(RplISupport, client.nick, "MAXCHANNELS=2 CHANLIMIT=#:2 NICKLEN=30 "+
-		"CHANNELLEN=9 TOPICLEN=307 AWAYLEN=0 MAXTARGETS=1 MODES=1 CHANTYPES=# PREFIX=(ov)@+ "+
-		"CHANMODES=,k,l,vontk NETWORK=PYX CASEMAPPING=ascii :are supported by this server")
+		"CHANNELLEN=9 TOPICLEN=307 AWAYLEN=0 MAXTARGETS=1 MODES=1 CHANTYPES=# PREFIX=(aov)&@+ "+
+		"CHANMODES=,k,l,voantk NETWORK=PYX CASEMAPPING=ascii :are supported by this server")
 
 	client.sendLUser()
 	handleMotd(client, Message{})
+
+	// this is NOT the same as just handleModeImpl: We are explicitly setting the mode
+	modes := "+"
+	if client.pyx.User.IsAdmin() {
+		modes = modes + "o"
+	}
+	if len(client.pyx.User.IdCode) > 0 {
+		modes = modes + "r"
+	}
+	if "+" != modes {
+		client.data <- fmt.Sprintf(":%s MODE %s :%s", client.nick, client.nick, modes)
+	}
+
+	client.joinChannel(GlobalChannel)
 }
 
 func (client *Client) sendLUser() {
@@ -217,6 +244,143 @@ func (client *Client) sendLUser() {
 	client.data <- formatFmt(RplLocalUsers, client.nick, ":Current Local Users: %d  Max: %d", 1, 1)
 	client.data <- formatFmt(RplGlobalUsers, client.nick, ":Current Global Users: %d  Max: %d", 1,
 		1)
+}
+
+func (client *Client) joinChannel(channel string) error {
+	if channel != GlobalChannel {
+		// TODO actually join the game on pyx
+	}
+	client.data <- fmt.Sprintf(":%s JOIN :%s", client.nick, channel)
+
+	handleTopicImpl(client, channel)
+
+	handleNamesImpl(client, channel)
+
+	// unreal doesn't shove these down automatically but... why not
+	handleModeImpl(client, channel)
+
+	client.data <- fmt.Sprintf(":%s PRIVMSG %s :hello!", BotNick, channel)
+
+	return nil
+}
+
+func handleNames(client *Client, msg Message) {
+	handleNamesImpl(client, msg.args...)
+}
+
+func handleNamesImpl(client *Client, args ...string) {
+	if len(args) == 0 {
+		client.data <- formatFmt(ErrNeedMoreParams, client.nick, "NAMES :Not enough parameters")
+		return
+	}
+
+	if args[0] == GlobalChannel {
+		names, err := client.pyx.GetNames()
+		if err != nil {
+			log.Errorf("Unable to retrieve names for %s: %v", args[0], err)
+		}
+		// TODO a proper length based on 512 minus broilerplate
+		for _, line := range joinIntoLines(300, append(names, "&"+BotNick)) {
+			client.data <- formatFmt(RplNames, client.nick, "= %s :%s", args[0], line)
+		}
+		client.data <- formatFmt(RplEndNames, client.nick, "%s :End of /NAMES list", args[0])
+	} else {
+		// TODO per-game channels
+	}
+}
+
+func handleTopic(client *Client, msg Message) {
+	handleTopicImpl(client, msg.args...)
+}
+
+func handleTopicImpl(client *Client, args ...string) {
+	if len(args) == 0 {
+		// error to not specify channel
+		client.data <- formatFmt(ErrNeedMoreParams, client.nick, "TOPIC :Not enough parameters")
+	} else if len(args) == 1 {
+		// show topic
+		var topic string
+		if args[0] == GlobalChannel {
+			if client.pyx.GlobalChatEnabled {
+				topic = "Global chat"
+			} else {
+				topic = "Global chat (disabled)"
+			}
+		} else {
+			// TODO have to get the game info for the topic
+			topic = "TODO"
+		}
+		client.data <- formatFmt(RplTopic, client.nick, "%s :%s", args[0], topic)
+		// TODO something better here than "now"
+		// TODO and for games, maybe the host should be setting the topic
+		client.data <- formatFmt(RplTopicWhoTime, client.nick, "%s %s %d", args[0], BotNick,
+			time.Now().Unix())
+	} else {
+		// error to try to change topic
+		// TODO is there a better numeric for this? we don't want to let ANYONE change it like this
+		client.data <- formatFmt(ErrChanOpPrivsNeeded, client.nick, "TOPIC :You can't do that.")
+	}
+}
+
+func handleMode(client *Client, msg Message) {
+	handleModeImpl(client, msg.args...)
+}
+
+func handleModeImpl(client *Client, args ...string) {
+	// TODO handle if the user is trying to chage modes
+	if len(args) == 0 {
+		client.data <- formatFmt(ErrNeedMoreParams, client.nick, "MODE :Not enough parameters")
+	} else if strings.HasPrefix(args[0], "#") {
+		if len(args) == 1 {
+			var modes string
+			if args[0] == GlobalChannel {
+				// TODO it'd be nice to know if join/quit is being broadcast, if they are we can +n too
+				if client.pyx.GlobalChatEnabled {
+					modes = "+t"
+				} else {
+					modes = "+mt"
+				}
+			} else {
+				// TODO we need game info here too for limit and key and stuff
+				modes = "+nt"
+			}
+			client.data <- formatFmt(RplChannelModeIs, client.nick, "%s %s", args[0], modes)
+			// TODO better than "now"
+			client.data <- formatFmt(RplCreationTime, client.nick, "%s %d", args[0],
+				time.Now().Unix())
+		} else {
+			// TODO handle if the user is trying to chage modes
+			// TODO but if they are the game host, we need to let them change some of the settings
+			client.data <- formatFmt(ErrChanOpPrivsNeeded, client.nick, "MODE :You can't do that.")
+		}
+	} else if args[0] == client.nick {
+		if len(args) == 1 {
+			// show modes
+			// default to no modes. this is how unreal reports it
+			modes := "+"
+			if client.pyx.User.IsAdmin() {
+				modes = modes + "o"
+			}
+			if len(client.pyx.User.IdCode) > 0 {
+				modes = modes + "r"
+			}
+			client.data <- formatFmt(RplUModeIs, client.nick, modes)
+		} else {
+			// error to change modes
+			// but unreal doesn't reply _at all_ for bad mode changes
+		}
+	} else {
+		// error to look at someone else's modes
+		// but unreal doesn't reply _at all_ for this
+	}
+}
+
+func handlePing(client *Client, msg Message) {
+	arg := ""
+	if len(msg.args) > 0 {
+		arg = msg.args[0]
+	}
+	client.data <- fmt.Sprintf(":%s PONG %s :%s", MyServerName, MyServerName, arg)
 }
 
 // handle the PYX stuff coming in
@@ -237,6 +401,6 @@ func (client *Client) dispatchPyxEvents() {
 		}
 
 		// TODO actually dispatch this somehow
-		client.data <- fmt.Sprintf(":Xyzzy PRIVMSG %s :%s", client.nick, event)
+		client.data <- fmt.Sprintf(":%s PRIVMSG %s :%v", BotNick, client.nick, event)
 	}
 }
