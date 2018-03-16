@@ -1,0 +1,14 @@
+# PYX-IRC configuration file
+
+[[servers]]
+port = 6667
+
+[[servers]]
+port = 6668
+advertised_name = "pyx-1.pretendyoure.xyz"
+network_name = "PYX-1"
+bot_hostname = "pyx-1.pretendyoure.xyz"
+user_hostname = "users.pyx-1.pretendyoure.xyz"
+global_channel = "#pyx-1"
+[servers.pyx]
+base_address = "https://pyx-1.pretendyoure.xyz/zy/"

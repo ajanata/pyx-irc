@@ -21,31 +21,54 @@
  * WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package main
+package irc
 
 import (
-	"github.com/ajanata/pyx-irc/irc"
-	"github.com/op/go-logging"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
+	"github.com/ajanata/pyx-irc/pyx"
 )
 
-var log = logging.MustGetLogger("main")
-var logFormat = logging.MustStringFormatter(`%{color}%{time:15:04:05.000} %{level:.5s} %{id:03x} %{shortfunc} (%{shortfile}) %{color:reset}>%{message}`)
+type Config struct {
+	BindAddress    string `toml:"bind_address"`
+	Port           int
+	AdvertisedName string `toml:"advertised_name"`
+	NetworkName    string `toml:"network_name"`
+	BotNick        string `toml:"bot_nick"`
+	BotUsername    string `toml:"bot_username"`
+	BotHostname    string `toml:"bot_hostname"`
+	UserHostname   string `toml:"user_hostname"`
+	GlobalChannel  string `toml:"global_channel"`
+	Pyx            pyx.Config
+}
 
-func main() {
-	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
-	logging.SetBackend(formattedStdErr)
-
-	loadConfig()
-
-	go func() {
-		log.Info(http.ListenAndServe("localhost:6680", nil))
-	}()
-
-	go irc.StartServer()
-
-	select {}
+func (config *Config) EnsureDefaults() {
+	log.Info("wat")
+	if config.BindAddress == "" {
+		log.Info("???")
+		config.BindAddress = "0.0.0.0"
+	}
+	if config.Port == 0 {
+		config.Port = 6667
+	}
+	if config.AdvertisedName == "" {
+		config.AdvertisedName = "localhost"
+	}
+	if config.NetworkName == "" {
+		config.NetworkName = "PYX"
+	}
+	if config.BotNick == "" {
+		config.BotNick = "Xyzzy"
+	}
+	if config.BotUsername == "" {
+		config.BotUsername = "xyzzy"
+	}
+	if config.BotHostname == "" {
+		config.BotHostname = "localhost"
+	}
+	if config.UserHostname == "" {
+		config.UserHostname = "users.localhost"
+	}
+	if config.GlobalChannel == "" {
+		config.GlobalChannel = "#global"
+	}
+	config.Pyx.EnsureDefaults()
 }

@@ -25,27 +25,24 @@ package main
 
 import (
 	"github.com/ajanata/pyx-irc/irc"
-	"github.com/op/go-logging"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
+	"github.com/koding/multiconfig"
 )
 
-var log = logging.MustGetLogger("main")
-var logFormat = logging.MustStringFormatter(`%{color}%{time:15:04:05.000} %{level:.5s} %{id:03x} %{shortfunc} (%{shortfile}) %{color:reset}>%{message}`)
+type Config struct {
+	Servers []irc.Config
+}
 
-func main() {
-	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
-	logging.SetBackend(formattedStdErr)
+func loadConfig() {
+	m := multiconfig.NewWithPath("pyx-irc.toml")
+	config := new(Config)
+	m.MustLoad(config)
+	config.EnsureDefaults()
 
-	loadConfig()
+	log.Debugf("Config: %+v", config)
+}
 
-	go func() {
-		log.Info(http.ListenAndServe("localhost:6680", nil))
-	}()
-
-	go irc.StartServer()
-
-	select {}
+func (config *Config) EnsureDefaults() {
+	for i, _ := range config.Servers {
+		(&config.Servers[i]).EnsureDefaults()
+	}
 }

@@ -21,31 +21,16 @@
  * WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package main
+package pyx
 
-import (
-	"github.com/ajanata/pyx-irc/irc"
-	"github.com/op/go-logging"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-)
+import ()
 
-var log = logging.MustGetLogger("main")
-var logFormat = logging.MustStringFormatter(`%{color}%{time:15:04:05.000} %{level:.5s} %{id:03x} %{shortfunc} (%{shortfile}) %{color:reset}>%{message}`)
+type Config struct {
+	BaseAddress string `toml:"base_address"`
+}
 
-func main() {
-	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
-	logging.SetBackend(formattedStdErr)
-
-	loadConfig()
-
-	go func() {
-		log.Info(http.ListenAndServe("localhost:6680", nil))
-	}()
-
-	go irc.StartServer()
-
-	select {}
+func (config *Config) EnsureDefaults() {
+	if config.BaseAddress == "" {
+		config.BaseAddress = "http://localhost:8080/"
+	}
 }
