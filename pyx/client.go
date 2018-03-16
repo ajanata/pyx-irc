@@ -48,6 +48,7 @@ type Client struct {
 	IncomingEvents    chan *LongPollResponse
 	User              *User
 	stop              chan bool
+	stopped           bool
 	pollWg            sync.WaitGroup
 	http              *resty.Client
 	sessionId         string
@@ -305,6 +306,11 @@ func (client *Client) sendNoErrorCheck(request map[string]string) (*AjaxResponse
 }
 
 func (client *Client) Close() {
+	// make sure we only do this once, got a panic in an edge case before
+	if client.stopped {
+		return
+	}
+	client.stopped = true
 	log.Infof("Stopping client for session %s", client.sessionId)
 	client.stop <- true
 	close(client.stop)

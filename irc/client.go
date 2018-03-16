@@ -82,9 +82,10 @@ type Event = pyx.LongPollResponse
 type EventHandlerFunc func(*Client, Event)
 
 var EventHandlers = map[string]EventHandlerFunc{
-	pyx.LongPollEvent_CHAT:         eventChat,
-	pyx.LongPollEvent_NEW_PLAYER:   eventNewPlayer,
-	pyx.LongPollEvent_PLAYER_LEAVE: eventPlayerQuit,
+	pyx.LongPollEvent_CHAT:              eventChat,
+	pyx.LongPollEvent_GAME_LIST_REFRESH: eventIgnore,
+	pyx.LongPollEvent_NEW_PLAYER:        eventNewPlayer,
+	pyx.LongPollEvent_PLAYER_LEAVE:      eventPlayerQuit,
 }
 
 func NewClient(connection net.Conn) *Client {
@@ -269,8 +270,6 @@ func (client *Client) joinChannel(channel string) error {
 	handleNamesImpl(client, channel)
 	// unreal doesn't shove these down automatically but... why not
 	handleModeImpl(client, channel)
-
-	client.data <- fmt.Sprintf(":%s PRIVMSG %s :hello!", BotNickUserAtHost, channel)
 
 	return nil
 }
@@ -485,7 +484,7 @@ func (client *Client) dispatchPyxEvents() {
 
 		handler, ok := EventHandlers[event.Event]
 		if !ok {
-			client.data <- fmt.Sprintf(":%s PRIVMSG %s :%v", BotNickUserAtHost, client.nick, event)
+			client.data <- fmt.Sprintf(":%s PRIVMSG %s :%+v", BotNickUserAtHost, client.nick, event)
 		} else {
 			handler(client, *event)
 		}
@@ -551,4 +550,8 @@ func eventChat(client *Client, event Event) {
 		text = makeEmote(text)
 	}
 	client.data <- fmt.Sprintf(":%s PRIVMSG %s :%s", getNickUserAtHost(event.From), target, text)
+}
+
+func eventIgnore(client *Client, event Event) {
+	// do nothing with this event.
 }
