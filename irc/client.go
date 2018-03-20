@@ -73,6 +73,8 @@ var RegisteredHandlers = map[string]IrcHandlerFunc{
 	"TOPIC":   handleTopic,
 	"USER":    handleRegisteredPassOrUser,
 	"WHO":     handleWho,
+	"WHOIS":   handleWhois,
+	"WHOWAS":  handleWhowas,
 }
 
 type Event = pyx.LongPollResponse
@@ -272,7 +274,7 @@ func (client *Client) joinChannel(channel string) error {
 	if channel != client.config.GlobalChannel {
 		// TODO actually join the game on pyx
 	}
-	client.data <- fmt.Sprintf(":%s JOIN :%s", getNickUserAtHost(client.nick, client), channel)
+	client.data <- fmt.Sprintf(":%s JOIN :%s", client.getNickUserAtHost(client.nick), channel)
 
 	handleTopicImpl(client, channel)
 	handleNamesImpl(client, channel)
@@ -441,7 +443,7 @@ func handleWho(client *Client, msg Message) {
 			}
 
 			client.data <- client.n.format(RplWho, client.nick, "%s %s %s %s %s %s :0 %s",
-				client.config.GlobalChannel, getUser(name), getHost(name, client),
+				client.config.GlobalChannel, getUser(name), client.getHost(name),
 				client.config.AdvertisedName, name, modes, name)
 		}
 
@@ -481,9 +483,64 @@ func handlePrivmsg(client *Client, msg Message) {
 	}
 }
 
+func handleWhois(client *Client, msg Message) {
+	if len(msg.args) == 0 {
+		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
+			"WHOIS :Not enough parameters")
+		return
+	}
+
+	resp, err := client.pyx.Whois(msg.args[0])
+	if err != nil {
+		if resp.ErrorCode == pyx.ErrorCode_NO_SUCH_USER {
+			client.data <- client.n.format(ErrNoSuchNick, client.nick, "%s :No such nick/channel",
+				msg.args[0])
+		} else {
+			// I don't think we'd ever get here without something that would abort the connection
+			client.data <- client.n.format(ErrNoSuchNick, client.nick, "%s :%s", msg.args[0], err)
+		}
+		client.data <- client.n.format(RplEndOfWhois, client.nick, "%s :End of /WHOIS list.",
+			msg.args[0])
+		return
+	}
+
+	nick := resp.Nickname
+	sigil := resp.Sigil
+
+	client.data <- client.n.format(RplWhoisUser, client.nick, "%s %s %s * :%s", nick,
+		getUser(nick), client.getHost(nick), nick)
+	// TODO game chats
+	client.data <- client.n.format(RplWhoisChannels, client.nick, "%s :%s%s", nick, sigil,
+		client.config.GlobalChannel)
+	client.data <- client.n.format(RplWhoisServer, client.nick, "%s %s :%s", nick,
+		client.config.AdvertisedName, client.config.Pyx.BaseAddress)
+	if sigil == pyx.Sigil_ADMIN {
+		client.data <- client.n.format(RplWhoisOperator, client.nick, "%s :is an Administrator",
+			nick)
+	}
+	if len(resp.IdCode) > 0 {
+		client.data <- client.n.format(RplWhoisSpecial, client.nick, "%s :Identification code: %s",
+			nick, resp.IdCode)
+	}
+	client.data <- client.n.format(RplWhoisIdle, client.nick, "%s %d %d :seconds idle, signon time",
+		nick, resp.Idle/1000, resp.ConnectedAt/1000)
+	client.data <- client.n.format(RplEndOfWhois, client.nick, "%s :/End of /WHOIS list.", nick)
+}
+
 func (client *Client) botNickUserAtHost() string {
 	return fmt.Sprintf("%s!%s@%s", client.config.BotNick, client.config.BotUsername,
 		client.config.BotHostname)
+}
+
+func handleWhowas(client *Client, msg Message) {
+	if len(msg.args) == 0 {
+		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
+			"WHOWAS :Not enough parameters")
+		return
+	}
+	client.data <- client.n.format(ErrWasNoSuchNick, client.nick, "%s :WHOWAS is not supported.",
+		msg.args[0])
+	client.data <- client.n.format(RplEndOfWhowas, client.nick, "%s :/End of WHOWAS", msg.args[0])
 }
 
 // handle the PYX stuff coming in
@@ -519,7 +576,7 @@ func eventNewPlayer(client *Client, event Event) {
 		return
 	}
 	// TODO we need to do something for a hostname for them
-	client.data <- fmt.Sprintf(":%s JOIN :%s", getNickUserAtHost(event.Nickname, client),
+	client.data <- fmt.Sprintf(":%s JOIN :%s", client.getNickUserAtHost(event.Nickname),
 		client.config.GlobalChannel)
 	mode := "+"
 	modeNames := ""
@@ -544,7 +601,7 @@ func eventPlayerQuit(client *Client, event Event) {
 		// actually those are different events entirely
 		return
 	}
-	client.data <- fmt.Sprintf(":%s QUIT :%s", getNickUserAtHost(event.Nickname, client),
+	client.data <- fmt.Sprintf(":%s QUIT :%s", client.getNickUserAtHost(event.Nickname),
 		pyx.DisconnectReasonMsgs[event.Reason])
 }
 
@@ -556,7 +613,7 @@ func eventChat(client *Client, event Event) {
 	if event.Wall {
 		// global notice from admin, handle this completely differently
 		client.data <- fmt.Sprintf(":%s NOTICE %s :Global notice: %s",
-			getNickUserAtHost(event.From, client), client.nick, event.Message)
+			client.getNickUserAtHost(event.From), client.nick, event.Message)
 		return
 	}
 
@@ -572,7 +629,7 @@ func eventChat(client *Client, event Event) {
 	if event.Emote {
 		text = makeEmote(text)
 	}
-	client.data <- fmt.Sprintf(":%s PRIVMSG %s :%s", getNickUserAtHost(event.From, client), target,
+	client.data <- fmt.Sprintf(":%s PRIVMSG %s :%s", client.getNickUserAtHost(event.From), target,
 		text)
 }
 

@@ -50,8 +50,8 @@ func joinIntoLines(charsPerLine int, pieces []string) []string {
 	return append(ret, curLine)
 }
 
-func getNickUserAtHost(nick string, client *Client) string {
-	return fmt.Sprintf("%s!%s@%s", nick, getUser(nick), getHost(nick, client))
+func (client *Client) getNickUserAtHost(nick string) string {
+	return fmt.Sprintf("%s!%s@%s", nick, getUser(nick), client.getHost(nick))
 }
 
 func getUser(nick string) string {
@@ -62,7 +62,7 @@ func getUser(nick string) string {
 	return strings.ToLower(user)
 }
 
-func getHost(nick string, client *Client) string {
+func (client *Client) getHost(nick string) string {
 	// TODO unique hosts per user? idk.
 	return "users." + client.config.AdvertisedName
 }

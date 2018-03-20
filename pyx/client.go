@@ -246,6 +246,13 @@ func (client *Client) sendChat(msg string, emote bool, wall bool, gameId int) er
 	return err
 }
 
+func (client *Client) Whois(nick string) (*AjaxResponse, error) {
+	return client.send(map[string]string{
+		AjaxRequest_OP:       AjaxOperation_WHOIS,
+		AjaxRequest_NICKNAME: nick,
+	})
+}
+
 func (client *Client) LogOut() {
 	// disregard result since we're throwing the user away anyway
 	client.send(map[string]string{
