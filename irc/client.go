@@ -62,6 +62,7 @@ var UnregisteredHandlers = map[string]IrcHandlerFunc{
 }
 var RegisteredHandlers = map[string]IrcHandlerFunc{
 	"CAP":     handleCap,
+	"LIST":    handleList,
 	"MODE":    handleMode,
 	"MOTD":    handleMotd,
 	"NAMES":   handleNames,
@@ -527,9 +528,27 @@ func handleWhois(client *Client, msg Message) {
 	client.data <- client.n.format(RplEndOfWhois, client.nick, "%s :/End of /WHOIS list.", nick)
 }
 
-func (client *Client) botNickUserAtHost() string {
-	return fmt.Sprintf("%s!%s@%s", client.config.BotNick, client.config.BotUsername,
-		client.config.BotHostname)
+func handleList(client *Client, msg Message) {
+	resp, err := client.pyx.GameList()
+	if err != nil {
+		log.Errorf("Unable to retrieve game list for /list: %v", err)
+		client.data <- client.n.format(ErrServiceConfused, client.nick,
+			":Error retrieving game list: %s", err)
+		return
+	}
+
+	client.data <- client.n.format(RplListStart, client.nick, "Channel :Users  Name")
+	for _, game := range resp.Games {
+		channel := fmt.Sprintf(client.config.GameChannelFormatString, game.Id)
+		client.data <- client.n.format(RplList, client.nick, "%s %d :%s", channel,
+			totalUserCount(game), makeGameTopic(game))
+		if game.GameOptions.SpectatorLimit > 0 {
+			channel = fmt.Sprintf(client.config.SpectateGameChannelFormatString, game.Id)
+			client.data <- client.n.format(RplList, client.nick, "%s %d :SPECTATE: %s", channel,
+				totalUserCount(game), makeGameTopic(game))
+		}
+	}
+	client.data <- client.n.format(RplListEnd, client.nick, ":End of /LIST")
 }
 
 func handleWhowas(client *Client, msg Message) {

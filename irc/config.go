@@ -28,16 +28,18 @@ import (
 )
 
 type Config struct {
-	BindAddress    string `toml:"bind_address"`
-	Port           int
-	AdvertisedName string `toml:"advertised_name"`
-	NetworkName    string `toml:"network_name"`
-	BotNick        string `toml:"bot_nick"`
-	BotUsername    string `toml:"bot_username"`
-	BotHostname    string `toml:"bot_hostname"`
-	UserHostname   string `toml:"user_hostname"`
-	GlobalChannel  string `toml:"global_channel"`
-	Pyx            pyx.Config
+	BindAddress                     string `toml:"bind_address"`
+	Port                            int
+	AdvertisedName                  string `toml:"advertised_name"`
+	NetworkName                     string `toml:"network_name"`
+	BotNick                         string `toml:"bot_nick"`
+	BotUsername                     string `toml:"bot_username"`
+	BotHostname                     string `toml:"bot_hostname"`
+	UserHostname                    string `toml:"user_hostname"`
+	GlobalChannel                   string `toml:"global_channel"`
+	GameChannelFormatString         string `toml:"game_channel_format_string"`
+	SpectateGameChannelFormatString string `toml:"spectate_game_channel_format_string"`
+	Pyx                             pyx.Config
 }
 
 func (config *Config) EnsureDefaults() {
@@ -67,6 +69,12 @@ func (config *Config) EnsureDefaults() {
 	}
 	if config.GlobalChannel == "" {
 		config.GlobalChannel = "#global"
+	}
+	if config.GameChannelFormatString == "" {
+		config.GameChannelFormatString = "#game-%d"
+	}
+	if config.SpectateGameChannelFormatString == "" {
+		config.SpectateGameChannelFormatString = "#watch-%d"
 	}
 	config.Pyx.EnsureDefaults()
 }

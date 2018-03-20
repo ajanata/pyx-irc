@@ -253,6 +253,12 @@ func (client *Client) Whois(nick string) (*AjaxResponse, error) {
 	})
 }
 
+func (client *Client) GameList() (*AjaxResponse, error) {
+	return client.send(map[string]string{
+		AjaxRequest_OP: AjaxOperation_GAME_LIST,
+	})
+}
+
 func (client *Client) LogOut() {
 	// disregard result since we're throwing the user away anyway
 	client.send(map[string]string{

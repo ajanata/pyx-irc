@@ -25,6 +25,7 @@ package irc
 
 import (
 	"fmt"
+	"github.com/ajanata/pyx-irc/pyx"
 	"strings"
 )
 
@@ -48,6 +49,11 @@ func joinIntoLines(charsPerLine int, pieces []string) []string {
 		}
 	}
 	return append(ret, curLine)
+}
+
+func (client *Client) botNickUserAtHost() string {
+	return fmt.Sprintf("%s!%s@%s", client.config.BotNick, client.config.BotUsername,
+		client.config.BotHostname)
 }
 
 func (client *Client) getNickUserAtHost(nick string) string {
@@ -78,4 +84,19 @@ func isEmote(msg string) (bool, string) {
 func makeEmote(msg string) string {
 	log.Debugf("Converting to emote: %s", msg)
 	return fmt.Sprintf("%cACTION %s%c", CtcpMagic, msg, CtcpMagic)
+}
+
+func totalUserCount(game pyx.GameInfo) int {
+	return len(game.Players) + len(game.Spectators)
+}
+
+func makeGameTopic(game pyx.GameInfo) string {
+	passwdLabel := ""
+	if game.HasPassword {
+		passwdLabel = "(Has password.) "
+	}
+	return fmt.Sprintf("%s's game (%s). %s%d score goal. %d/%d players, %d/%d spectators.",
+		game.Host, pyx.GameStateMsgs[game.State], passwdLabel, game.GameOptions.ScoreLimit,
+		len(game.Players), game.GameOptions.PlayerLimit, len(game.Spectators),
+		game.GameOptions.SpectatorLimit)
 }
