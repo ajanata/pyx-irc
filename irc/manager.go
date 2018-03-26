@@ -31,6 +31,7 @@ type Manager struct {
 	clients    map[*Client]bool
 	register   chan *Client
 	unregister chan *Client
+	config     *Config
 }
 
 func NewManager(listener net.Listener, config *Config) {
@@ -38,6 +39,7 @@ func NewManager(listener net.Listener, config *Config) {
 		clients:    make(map[*Client]bool),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		config:     config,
 	}
 	go manager.listenForConnections()
 
@@ -60,10 +62,12 @@ func (manager *Manager) listenForConnections() {
 		select {
 		case client := <-manager.register:
 			manager.clients[client] = true
-			log.Infof("Received new connection from %s", client.socket.RemoteAddr())
+			log.Infof("Received new connection from %s on %d", client.socket.RemoteAddr(),
+				manager.config.Port)
 		case client := <-manager.unregister:
 			if _, ok := manager.clients[client]; ok {
-				log.Infof("Closed connection for %s", client.socket.RemoteAddr())
+				log.Infof("Closed connection for %s on %d", client.socket.RemoteAddr(),
+					manager.config.Port)
 				close(client.data)
 				close(client.close)
 				delete(manager.clients, client)
@@ -75,8 +79,8 @@ func (manager *Manager) listenForConnections() {
 func (manager *Manager) receive(client *Client) {
 	for {
 		if !client.reader.Scan() {
-			log.Debugf("Unable to read from client %s, closing connection.",
-				client.socket.RemoteAddr())
+			log.Debugf("Unable to read from client %s, closing connection on %d.",
+				client.socket.RemoteAddr(), manager.config.Port)
 			manager.unregister <- client
 			client.socket.Close()
 			return
@@ -116,7 +120,7 @@ func (manager *Manager) close(client *Client) {
 	for {
 		close, ok := <-client.close
 		if close || !ok {
-			log.Infof("Close requested for client %s (auto: %s)", client.socket.RemoteAddr(), !ok)
+			log.Infof("Close requested for client %s (auto: %v)", client.socket.RemoteAddr(), !ok)
 			manager.unregister <- client
 			client.socket.Close()
 			return
