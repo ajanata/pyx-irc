@@ -82,7 +82,9 @@ type Event = pyx.LongPollResponse
 type EventHandlerFunc func(*Client, Event)
 
 var EventHandlers = map[string]EventHandlerFunc{
+	pyx.LongPollEvent_BANNED:            eventBanned,
 	pyx.LongPollEvent_CHAT:              eventChat,
+	pyx.LongPollEvent_KICKED:            eventKicked,
 	pyx.LongPollEvent_GAME_LIST_REFRESH: eventIgnore,
 	pyx.LongPollEvent_NEW_PLAYER:        eventNewPlayer,
 	pyx.LongPollEvent_PLAYER_LEAVE:      eventPlayerQuit,
@@ -654,4 +656,23 @@ func eventChat(client *Client, event Event) {
 
 func eventIgnore(client *Client, event Event) {
 	// do nothing with this event.
+}
+
+func eventBanned(client *Client, event Event) {
+	doKickOrBan(client, "You have been banned by the server administrator.")
+}
+
+func eventKicked(client *Client, event Event) {
+	doKickOrBan(client, "You have been kicked by the server administrator.")
+}
+
+func doKickOrBan(client *Client, msg string) {
+	s := fmt.Sprintf(":%s KILL %s :%s!%s (%s)", client.botNickUserAtHost(), client.nick,
+		client.config.AdvertisedName, client.config.BotNick, msg)
+	// have to do this differently to ensure the client actually gets this in the right order
+	client.writer.WriteString(s + "\r\n")
+	client.writer.Flush()
+
+	client.disconnect(fmt.Sprintf("%s (Killed (%s (%s)))", client.config.AdvertisedName,
+		client.config.BotNick, msg))
 }
