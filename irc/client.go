@@ -52,6 +52,12 @@ type Client struct {
 	n          *numerics
 }
 
+type ChannelInfo struct {
+	name       string
+	totalUsers int
+	topic      string
+}
+
 type IrcHandlerFunc func(*Client, Message)
 
 var UnregisteredHandlers = map[string]IrcHandlerFunc{
@@ -263,14 +269,14 @@ func handleLUsers(client *Client, msg Message) {
 }
 
 func (client *Client) sendLUsers() {
-	resp, err := client.pyx.GameList()
+	channels, err := client.getChannels()
 	if err != nil {
 		log.Errorf("Unable to retrieve game list for /lusers: %v", err)
 		client.data <- client.n.format(ErrServiceConfused, client.nick,
 			":Error retrieving game list: %s", err)
 		return
 	}
-	gameCount := len(resp.Games)
+	channelCount := len(channels)
 
 	names, err := client.pyx.Names()
 	if err != nil {
@@ -286,9 +292,8 @@ func (client *Client) sendLUsers() {
 	client.data <- client.n.format(RplLUserClient, client.nick, ":There are %d users on 1 server",
 		userCount)
 	client.data <- client.n.format(RplLUserOp, client.nick, "%d :operator(s) online", 0)
-	// games get two (one to play, one to spectate) and also global
 	client.data <- client.n.format(RplLUserChannels, client.nick, "%d :channels formed",
-		(gameCount*2)+1)
+		channelCount)
 	client.data <- client.n.format(RplLUserMe, client.nick,
 		":I have %d clients and %d servers", userCount, 0)
 	client.data <- client.n.format(RplLocalUsers, client.nick,
@@ -305,19 +310,19 @@ func (client *Client) joinChannel(channel string) error {
 	}
 	client.data <- fmt.Sprintf(":%s JOIN :%s", client.getNickUserAtHost(client.nick), channel)
 
-	handleTopicImpl(client, channel)
-	handleNamesImpl(client, channel)
+	client.handleTopicImpl(channel)
+	client.handleNamesImpl(channel)
 	// unreal doesn't shove these down automatically but... why not
-	handleModeImpl(client, channel)
+	client.handleModeImpl(channel)
 
 	return nil
 }
 
 func handleNames(client *Client, msg Message) {
-	handleNamesImpl(client, msg.args...)
+	client.handleNamesImpl(msg.args...)
 }
 
-func handleNamesImpl(client *Client, args ...string) {
+func (client *Client) handleNamesImpl(args ...string) {
 	if len(args) == 0 {
 		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
 			"NAMES :Not enough parameters")
@@ -340,27 +345,17 @@ func handleNamesImpl(client *Client, args ...string) {
 }
 
 func handleTopic(client *Client, msg Message) {
-	handleTopicImpl(client, msg.args...)
+	client.handleTopicImpl(msg.args...)
 }
 
-func handleTopicImpl(client *Client, args ...string) {
+func (client *Client) handleTopicImpl(args ...string) {
 	if len(args) == 0 {
 		// error to not specify channel
 		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
 			"TOPIC :Not enough parameters")
 	} else if len(args) == 1 {
 		// show topic
-		var topic string
-		if args[0] == client.config.GlobalChannel {
-			if client.pyx.GlobalChatEnabled {
-				topic = "Global chat"
-			} else {
-				topic = "Global chat (disabled)"
-			}
-		} else {
-			// TODO have to get the game info for the topic
-			topic = "TODO"
-		}
+		topic := client.getTopic(args[0], nil)
 		client.data <- client.n.format(RplTopic, client.nick, "%s :%s", args[0], topic)
 		// TODO something better here than "now"
 		// TODO and for games, maybe the host should be setting the topic
@@ -374,11 +369,25 @@ func handleTopicImpl(client *Client, args ...string) {
 	}
 }
 
-func handleMode(client *Client, msg Message) {
-	handleModeImpl(client, msg.args...)
+// Make the topic for a channel. gameInfo may be nil if the channel being passed is known to be
+// the global channel.
+func (client *Client) getTopic(channel string, gameInfo *pyx.GameInfo) string {
+	if channel == client.config.GlobalChannel {
+		if client.pyx.GlobalChatEnabled {
+			return "Global chat"
+		} else {
+			return "Global chat (disabled)"
+		}
+	} else {
+		return makeGameTopic(*gameInfo)
+	}
 }
 
-func handleModeImpl(client *Client, args ...string) {
+func handleMode(client *Client, msg Message) {
+	client.handleModeImpl(msg.args...)
+}
+
+func (client *Client) handleModeImpl(args ...string) {
 	// TODO handle if the user is trying to change modes
 	if len(args) == 0 {
 		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
@@ -561,7 +570,7 @@ func handleWhois(client *Client, msg Message) {
 }
 
 func handleList(client *Client, msg Message) {
-	resp, err := client.pyx.GameList()
+	channels, err := client.getChannels()
 	if err != nil {
 		log.Errorf("Unable to retrieve game list for /list: %v", err)
 		client.data <- client.n.format(ErrServiceConfused, client.nick,
@@ -570,17 +579,47 @@ func handleList(client *Client, msg Message) {
 	}
 
 	client.data <- client.n.format(RplListStart, client.nick, "Channel :Users  Name")
-	for _, game := range resp.Games {
-		channel := fmt.Sprintf(client.config.GameChannelFormatString, game.Id)
-		client.data <- client.n.format(RplList, client.nick, "%s %d :%s", channel,
-			totalUserCount(game), makeGameTopic(game))
-		if game.GameOptions.SpectatorLimit > 0 {
-			channel = fmt.Sprintf(client.config.SpectateGameChannelFormatString, game.Id)
-			client.data <- client.n.format(RplList, client.nick, "%s %d :SPECTATE: %s", channel,
-				totalUserCount(game), makeGameTopic(game))
-		}
+	for _, channel := range channels {
+		client.data <- client.n.format(RplList, client.nick, "%s %d :%s", channel.name,
+			channel.totalUsers, channel.topic)
 	}
 	client.data <- client.n.format(RplListEnd, client.nick, ":End of /LIST")
+}
+
+func (client *Client) getChannels() ([]ChannelInfo, error) {
+	resp, err := client.pyx.GameList()
+	if err != nil {
+		return []ChannelInfo{}, err
+	}
+
+	names, err := client.pyx.Names()
+	if err != nil {
+		return []ChannelInfo{}, err
+	}
+	userCount := len(names)
+
+	games := []ChannelInfo{{
+		name:       "global",
+		totalUsers: userCount + 1,
+		topic:      client.getTopic(client.config.GlobalChannel, nil),
+	}}
+	for _, game := range resp.Games {
+		info := ChannelInfo{
+			name:       fmt.Sprintf(client.config.GameChannelFormatString, game.Id),
+			totalUsers: totalUserCount(game),
+			topic:      makeGameTopic(game),
+		}
+		games = append(games, info)
+		if game.GameOptions.SpectatorLimit > 0 {
+			info = ChannelInfo{
+				name:       fmt.Sprintf(client.config.SpectateGameChannelFormatString, game.Id),
+				totalUsers: totalUserCount(game),
+				topic:      "SPECTATE: " + makeGameTopic(game),
+			}
+			games = append(games, info)
+		}
+	}
+	return games, nil
 }
 
 func handleWhowas(client *Client, msg Message) {
