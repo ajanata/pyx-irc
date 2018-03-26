@@ -64,6 +64,7 @@ const RplEndNames = "366"
 const RplBanList = "367"
 const RplEndOfBanList = "368"
 const RplEndOfWhowas = "369"
+const RplWhoisHost = "378"
 
 // errors
 const ErrNoSuchNick = "401"

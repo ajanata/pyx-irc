@@ -538,6 +538,10 @@ func handleWhois(client *Client, msg Message) {
 
 	client.data <- client.n.format(RplWhoisUser, client.nick, "%s %s %s * :%s", nick,
 		getUser(nick), client.getHost(nick), nick)
+	if len(resp.IpAddress) > 0 {
+		client.data <- client.n.format(RplWhoisHost, client.nick, "%s :is connecting from %s", nick,
+			resp.IpAddress)
+	}
 	// TODO game chats
 	client.data <- client.n.format(RplWhoisChannels, client.nick, "%s :%s%s", nick, sigil,
 		client.config.GlobalChannel)
