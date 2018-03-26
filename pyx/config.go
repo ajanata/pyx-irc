@@ -27,6 +27,7 @@ import ()
 
 type Config struct {
 	BaseAddress string `toml:"base_address"`
+	HttpDebug   bool   `toml:"debug"`
 }
 
 func (config *Config) EnsureDefaults() {

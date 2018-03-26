@@ -62,11 +62,13 @@ func NewClient(nick string, idcode string, config *Config) (*Client, error) {
 	}
 
 	client.http.
-		SetDebug(true).
 		SetHeader("User-Agent", "PYX-IRC").
 		SetHostURL(config.BaseAddress).
 		SetRetryCount(3).
 		SetTimeout(time.Duration(1 * time.Minute))
+	if config.HttpDebug {
+		client.http.SetDebug(true)
+	}
 
 	err := client.prepare()
 	if err != nil {

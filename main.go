@@ -24,6 +24,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/ajanata/pyx-irc/irc"
 	"github.com/op/go-logging"
 	"net/http"
@@ -35,15 +36,24 @@ var log = logging.MustGetLogger("main")
 var logFormat = logging.MustStringFormatter(`%{color}%{time:15:04:05.000} %{level:.5s} %{id:03x} %{shortfunc} (%{shortfile}) %{color:reset}>%{message}`)
 
 func main() {
-	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
-	logging.SetBackend(formattedStdErr)
-
 	config := loadConfig()
 
-	go func() {
-		log.Info(http.ListenAndServe("localhost:6680", nil))
-	}()
+	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
+	stdErrLeveled := logging.AddModuleLevel(backendStdErr)
+	level, err := logging.LogLevel(config.LogLevel)
+	if err != nil {
+		fmt.Println("Unable to configure logging: %s", err)
+		return
+	}
+	stdErrLeveled.SetLevel(level, "")
+	formattedStdErr := logging.NewBackendFormatter(stdErrLeveled, logFormat)
+	logging.SetBackend(formattedStdErr)
+
+	if config.RunDebugServer {
+		go func() {
+			log.Info(http.ListenAndServe("localhost:6680", nil))
+		}()
+	}
 
 	for _, server := range config.Servers {
 		log.Debugf("server config: %+v", server)

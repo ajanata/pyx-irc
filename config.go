@@ -29,7 +29,9 @@ import (
 )
 
 type Config struct {
-	Servers []irc.Config
+	Servers        []irc.Config
+	LogLevel       string `toml:"log_level"`
+	RunDebugServer bool   `toml:"run_debug_server"`
 }
 
 func loadConfig() *Config {
@@ -38,13 +40,14 @@ func loadConfig() *Config {
 	m.MustLoad(config)
 	config.EnsureDefaults()
 
-	log.Debugf("Config: %+v", config)
-
 	return config
 }
 
 func (config *Config) EnsureDefaults() {
 	for i := range config.Servers {
 		(&config.Servers[i]).EnsureDefaults()
+	}
+	if config.LogLevel == "" {
+		config.LogLevel = "INFO"
 	}
 }
