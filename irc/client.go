@@ -63,6 +63,7 @@ var UnregisteredHandlers = map[string]IrcHandlerFunc{
 var RegisteredHandlers = map[string]IrcHandlerFunc{
 	"CAP":     handleCap,
 	"LIST":    handleList,
+	"LUSERS":  handleLUsers,
 	"MODE":    handleMode,
 	"MOTD":    handleMotd,
 	"NAMES":   handleNames,
@@ -232,14 +233,14 @@ func (client *Client) sendWelcome() {
 	client.data <- client.n.format(RplYourHost, client.nick,
 		":Your host is %s, running version TODO", client.config.AdvertisedName)
 	// user modes, channel modes
-	client.data <- client.n.format(RplMyInfo, client.nick, "%s TODO or lvontk",
+	client.data <- client.n.format(RplMyInfo, client.nick, "%s TODO Bor alvontk",
 		client.config.AdvertisedName)
 	client.data <- client.n.format(RplISupport, client.nick,
 		"MAXCHANNELS=2 CHANLIMIT=#:2 NICKLEN=30 "+
 			"CHANNELLEN=9 TOPICLEN=307 AWAYLEN=0 MAXTARGETS=1 MODES=1 CHANTYPES=# PREFIX=(aov)&@+ "+
 			"CHANMODES=,k,l,voantk NETWORK=PYX CASEMAPPING=ascii :are supported by this server")
 
-	client.sendLUser()
+	client.sendLUsers()
 	handleMotd(client, Message{})
 
 	// this is NOT the same as just handleModeImpl: We are explicitly setting the mode
@@ -257,22 +258,47 @@ func (client *Client) sendWelcome() {
 	client.joinChannel(client.config.GlobalChannel)
 }
 
-func (client *Client) sendLUser() {
-	// TODO real counts
+func handleLUsers(client *Client, msg Message) {
+	client.sendLUsers()
+}
+
+func (client *Client) sendLUsers() {
+	resp, err := client.pyx.GameList()
+	if err != nil {
+		log.Errorf("Unable to retrieve game list for /lusers: %v", err)
+		client.data <- client.n.format(ErrServiceConfused, client.nick,
+			":Error retrieving game list: %s", err)
+		return
+	}
+	gameCount := len(resp.Games)
+
+	names, err := client.pyx.Names()
+	if err != nil {
+		log.Errorf("Unable to retrieve user list for /lusers: %v", err)
+		client.data <- client.n.format(ErrServiceConfused, client.nick,
+			":Error retrieving user list: %s", err)
+		return
+	}
+	userCount := len(names)
+
 	// TODO maybe keep track of how many users are using the bridge and count them as "local"
 	// and everyone else as "global"?
 	client.data <- client.n.format(RplLUserClient, client.nick, ":There are %d users on 1 server",
-		1)
+		userCount)
 	client.data <- client.n.format(RplLUserOp, client.nick, "%d :operator(s) online", 0)
-	client.data <- client.n.format(RplLUserChannels, client.nick, "%d :channels formed", 0)
+	// games get two (one to play, one to spectate) and also global
+	client.data <- client.n.format(RplLUserChannels, client.nick, "%d :channels formed",
+		(gameCount*2)+1)
 	client.data <- client.n.format(RplLUserMe, client.nick,
-		":I have %d clients and %d servers", 1, 0)
+		":I have %d clients and %d servers", userCount, 0)
 	client.data <- client.n.format(RplLocalUsers, client.nick,
-		":Current Local Users: %d  Max: %d", 1, 1)
+		":Current Local Users: %d  Max: %d", userCount, userCount)
 	client.data <- client.n.format(RplGlobalUsers, client.nick,
-		":Current Global Users: %d  Max: %d", 1, 1)
+		":Current Global Users: %d  Max: %d", userCount, userCount)
 }
 
+// Send the stuff to the IRC client required when joining a channel. Assumes that the channel is
+// valid to join.
 func (client *Client) joinChannel(channel string) error {
 	if channel != client.config.GlobalChannel {
 		// TODO actually join the game on pyx
@@ -299,7 +325,7 @@ func handleNamesImpl(client *Client, args ...string) {
 	}
 
 	if args[0] == client.config.GlobalChannel {
-		names, err := client.pyx.GetNames()
+		names, err := client.pyx.Names()
 		if err != nil {
 			log.Errorf("Unable to retrieve names for %s: %v", args[0], err)
 		}
@@ -421,7 +447,7 @@ func handlePing(client *Client, msg Message) {
 
 func handleWho(client *Client, msg Message) {
 	if len(msg.args) == 0 || msg.args[0] == client.config.GlobalChannel {
-		names, err := client.pyx.GetNames()
+		names, err := client.pyx.Names()
 		if err != nil {
 			log.Errorf("Unable to retrieve names for %s: %v", client.config.GlobalChannel, err)
 		}

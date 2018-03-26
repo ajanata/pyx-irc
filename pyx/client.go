@@ -213,7 +213,7 @@ func (client *Client) login(nick string, idcode string) error {
 	return nil
 }
 
-func (client *Client) GetNames() ([]string, error) {
+func (client *Client) Names() ([]string, error) {
 	resp, err := client.send(map[string]string{
 		AjaxRequest_OP: AjaxOperation_NAMES,
 	})
