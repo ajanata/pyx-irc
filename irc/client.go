@@ -516,8 +516,8 @@ func handlePrivmsg(client *Client, msg Message) {
 	action, text := isEmote(msg.args[1])
 	err := client.pyx.SendGlobalChat(text, action)
 	if err != nil {
-		client.data <- fmt.Sprintf(":%s PRIVMSG %s :Unable to send previous chat: %s",
-			client.botNickUserAtHost(), msg.args[0], err)
+		client.data <- client.n.format(ErrCannotSendToChan, client.nick,
+			"%s :Cannot send to channel: %s", msg.args[0], err)
 	}
 }
 
