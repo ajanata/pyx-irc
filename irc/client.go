@@ -29,8 +29,8 @@ import (
 	"github.com/ajanata/pyx-irc/pyx"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
-	"time"
 )
 
 var validNickRegex = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]{2,29}$")
@@ -50,6 +50,7 @@ type Client struct {
 	pyx        *pyx.Client
 	config     *Config
 	n          *numerics
+	gameId     *int
 }
 
 type ChannelInfo struct {
@@ -244,7 +245,7 @@ func (client *Client) sendWelcome() {
 	client.data <- client.n.format(RplISupport, client.nick,
 		"MAXCHANNELS=2 CHANLIMIT=#:2 NICKLEN=30 "+
 			"CHANNELLEN=9 TOPICLEN=307 AWAYLEN=0 MAXTARGETS=1 MODES=1 CHANTYPES=# PREFIX=(aov)&@+ "+
-			"CHANMODES=,k,l,voantk NETWORK=PYX CASEMAPPING=ascii :are supported by this server")
+			"CHANMODES=,k,lL,voantk NETWORK=PYX CASEMAPPING=ascii :are supported by this server")
 
 	client.sendLUsers()
 	handleMotd(client, Message{})
@@ -355,12 +356,46 @@ func (client *Client) handleTopicImpl(args ...string) {
 			"TOPIC :Not enough parameters")
 	} else if len(args) == 1 {
 		// show topic
-		topic := client.getTopic(args[0], nil)
+		var topic string
+		var set int64
+		var setBy string
+		if args[0] == client.config.GlobalChannel {
+			topic = client.getTopic(args[0], nil)
+			set = client.pyx.ServerStarted
+			setBy = client.config.BotNick
+		} else if client.gameId == nil {
+			// user isn't in a game so they can't request a topic for a game
+			client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :Not in channel.",
+				args[0])
+			return
+		} else {
+			requestedId, _, err := client.getGameFromChannel(args[0])
+			if err != nil {
+				client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :%s", args[0], err)
+				return
+			}
+			if requestedId != *client.gameId {
+				// user isn't in the game they asked for so they can't see it
+				client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :Not in channel.",
+					args[0])
+				return
+			}
+			// okay, so the user is definitely in this game, so we can actually ask the pyx server
+			// for the information we need
+			resp, err := client.pyx.GameInfo(requestedId)
+			if err != nil {
+				log.Errorf("Unable to retrieve game %d info for /topic request: %s", requestedId,
+					err)
+				client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :%s", args[0], err)
+				return
+			}
+			topic = client.getTopic(args[0], &resp.GameInfo)
+			set = resp.GameInfo.Created
+			setBy = resp.GameInfo.Host
+		}
 		client.data <- client.n.format(RplTopic, client.nick, "%s :%s", args[0], topic)
-		// TODO something better here than "now"
-		// TODO and for games, maybe the host should be setting the topic
-		client.data <- client.n.format(RplTopicWhoTime, client.nick, "%s %s %d", args[0],
-			client.config.BotNick, time.Now().Unix())
+		client.data <- client.n.format(RplTopicWhoTime, client.nick, "%s %s %d", args[0], setBy,
+			set/1000)
 	} else {
 		// error to try to change topic
 		// TODO is there a better numeric for this? we don't want to let ANYONE change it like this
@@ -378,8 +413,11 @@ func (client *Client) getTopic(channel string, gameInfo *pyx.GameInfo) string {
 		} else {
 			return "Global chat (disabled)"
 		}
-	} else {
+	} else if gameInfo != nil {
 		return makeGameTopic(*gameInfo)
+	} else {
+		log.Errorf("Topic for channel %s requested but gameInfo is nil!", channel)
+		return "(error generating topic)"
 	}
 }
 
@@ -395,7 +433,9 @@ func (client *Client) handleModeImpl(args ...string) {
 	} else if strings.HasPrefix(args[0], "#") {
 		if len(args) == 1 {
 			var modes string
+			var created int64
 			if args[0] == client.config.GlobalChannel {
+				created = client.pyx.ServerStarted
 				modes = "+t"
 				if !client.pyx.GlobalChatEnabled {
 					modes = modes + "m"
@@ -403,14 +443,46 @@ func (client *Client) handleModeImpl(args ...string) {
 				if client.pyx.BroadcastingUsers {
 					modes = modes + "n"
 				}
+			} else if client.gameId == nil {
+				// user isn't in a game so they can't view modes for a game
+				client.data <- client.n.format(ErrNotOnChannel, client.nick,
+					"%s :Not in channel.", args[0])
+				return
 			} else {
-				// TODO we need game info here too for limit and key and stuff
+				requestedId, _, err := client.getGameFromChannel(args[0])
+				if err != nil {
+					client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :%s", args[0],
+						err)
+					return
+				}
+				if requestedId != *client.gameId {
+					// user isn't in the game they asked for so they can't see it
+					client.data <- client.n.format(ErrNotOnChannel, client.nick,
+						"%s :Not in channel.", args[0])
+					return
+				}
+				// okay, so the user is definitely in this game, so we can actually ask the pyx server
+				// for the information we need
+				resp, err := client.pyx.GameInfo(requestedId)
+				if err != nil {
+					log.Errorf("Unable to retrieve game %d info for /mode request: %s", requestedId,
+						err)
+					client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :%s", args[0],
+						err)
+					return
+				}
+				created = resp.GameInfo.Created
+
 				modes = "+nt"
+				if resp.GameInfo.HasPassword {
+					modes = modes + "k"
+				}
+				modes = fmt.Sprintf("%slL %d %d", modes, resp.GameInfo.GameOptions.PlayerLimit+1,
+					resp.GameInfo.GameOptions.SpectatorLimit+1)
 			}
 			client.data <- client.n.format(RplChannelModeIs, client.nick, "%s %s", args[0], modes)
-			// TODO better than "now"
 			client.data <- client.n.format(RplCreationTime, client.nick, "%s %d", args[0],
-				time.Now().Unix())
+				created/1000)
 		} else {
 			if args[1] == "b" {
 				// irssi likes to request the ban list
@@ -605,14 +677,14 @@ func (client *Client) getChannels() ([]ChannelInfo, error) {
 	}}
 	for _, game := range resp.Games {
 		info := ChannelInfo{
-			name:       fmt.Sprintf(client.config.GameChannelFormatString, game.Id),
+			name:       client.config.GameChannelPrefix + strconv.Itoa(game.Id),
 			totalUsers: totalUserCount(game),
 			topic:      makeGameTopic(game),
 		}
 		games = append(games, info)
 		if game.GameOptions.SpectatorLimit > 0 {
 			info = ChannelInfo{
-				name:       fmt.Sprintf(client.config.SpectateGameChannelFormatString, game.Id),
+				name:       client.config.SpectateGameChannelPrefix + strconv.Itoa(game.Id),
 				totalUsers: totalUserCount(game),
 				topic:      "SPECTATE: " + makeGameTopic(game),
 			}

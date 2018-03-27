@@ -76,6 +76,7 @@ const (
 	AjaxResponse_WHITE_CARDS            = "wc"
 	AjaxResponse_HAND                   = "h"
 	AjaxResponse_ERROR_CODE             = "ec"
+	AjaxResponse_SERVER_STARTED         = "SS"
 	AjaxResponse_NEXT                   = "next"
 	AjaxResponse_GAME_INFO              = "gi"
 	AjaxResponse_ERROR                  = "e"
@@ -105,6 +106,7 @@ type AjaxResponse struct {
 	WhiteCards           []int          `json:"wc"`
 	Hand                 []int          `json:"h"`
 	ErrorCode            string         `json:"ec"`
+	ServerStarted        int64          `json:"SS"`
 	Next                 string         `json:"next"`
 	GameInfo             GameInfo       `json:"gi"`
 	Error                bool           `json:"e"`
@@ -183,45 +185,49 @@ var DisconnectReasonMsgs = map[string]string{
 
 // ErrorCode
 const (
-	ErrorCode_INVALID_NICK             = "in"
-	ErrorCode_TOO_MANY_USERS           = "tmu"
-	ErrorCode_NOT_GAME_HOST            = "ngh"
-	ErrorCode_MESSAGE_TOO_LONG         = "mtl"
-	ErrorCode_NO_NICK_SPECIFIED        = "nns"
-	ErrorCode_BANNED                   = "B&"
-	ErrorCode_WRONG_PASSWORD           = "wp"
-	ErrorCode_RESERVED_NICK            = "rn"
-	ErrorCode_TOO_MANY_GAMES           = "tmg"
-	ErrorCode_INVALID_ID_CODE          = "iid"
-	ErrorCode_CANNOT_JOIN_ANOTHER_GAME = "cjag"
-	ErrorCode_NO_MSG_SPECIFIED         = "nms"
-	ErrorCode_ALREADY_STARTED          = "as"
-	ErrorCode_NOT_ADMIN                = "na"
-	ErrorCode_INVALID_GAME             = "ig"
-	ErrorCode_NO_SESSION               = "ns"
-	ErrorCode_ACCESS_DENIED            = "ad"
-	ErrorCode_NICK_IN_USE              = "niu"
-	ErrorCode_NOT_JUDGE                = "nj"
-	ErrorCode_SERVER_ERROR             = "serr"
-	ErrorCode_CARDCAST_INVALID_ID      = "cii"
-	ErrorCode_TOO_FAST                 = "tf"
-	ErrorCode_NOT_ENOUGH_CARDS         = "nec"
-	ErrorCode_NO_CARD_SPECIFIED        = "ncs"
-	ErrorCode_NO_GAME_SPECIFIED        = "ngs"
-	ErrorCode_OP_NOT_SPECIFIED         = "ons"
-	ErrorCode_BAD_REQUEST              = "br"
-	ErrorCode_NOT_ENOUGH_PLAYERS       = "nep"
-	ErrorCode_CARDCAST_CANNOT_FIND     = "ccf"
-	ErrorCode_NOT_IN_THAT_GAME         = "nitg"
-	ErrorCode_NO_SUCH_USER             = "nsu"
-	ErrorCode_NOT_REGISTERED           = "nr"
-	ErrorCode_BAD_OP                   = "bo"
-	ErrorCode_DO_NOT_HAVE_CARD         = "dnhc"
-	ErrorCode_NOT_YOUR_TURN            = "nyt"
-	ErrorCode_ALREADY_STOPPED          = "aS"
-	ErrorCode_SESSION_EXPIRED          = "se"
-	ErrorCode_GAME_FULL                = "gf"
-	ErrorCode_INVALID_CARD             = "ic"
+	ErrorCode_INVALID_NICK                = "in"
+	ErrorCode_TOO_MANY_USERS              = "tmu"
+	ErrorCode_NOT_GAME_HOST               = "ngh"
+	ErrorCode_MESSAGE_TOO_LONG            = "mtl"
+	ErrorCode_NO_NICK_SPECIFIED           = "nns"
+	ErrorCode_BANNED                      = "B&"
+	ErrorCode_WRONG_PASSWORD              = "wp"
+	ErrorCode_RESERVED_NICK               = "rn"
+	ErrorCode_TOO_MANY_GAMES              = "tmg"
+	ErrorCode_INVALID_ID_CODE             = "iid"
+	ErrorCode_CANNOT_JOIN_ANOTHER_GAME    = "cjag"
+	ErrorCode_NO_MSG_SPECIFIED            = "nms"
+	ErrorCode_CAPSLOCK                    = "CL"
+	ErrorCode_ALREADY_STARTED             = "as"
+	ErrorCode_NOT_ADMIN                   = "na"
+	ErrorCode_INVALID_GAME                = "ig"
+	ErrorCode_NO_SESSION                  = "ns"
+	ErrorCode_ACCESS_DENIED               = "ad"
+	ErrorCode_NICK_IN_USE                 = "niu"
+	ErrorCode_NOT_JUDGE                   = "nj"
+	ErrorCode_SERVER_ERROR                = "serr"
+	ErrorCode_CARDCAST_INVALID_ID         = "cii"
+	ErrorCode_TOO_FAST                    = "tf"
+	ErrorCode_NOT_ENOUGH_CARDS            = "nec"
+	ErrorCode_NO_CARD_SPECIFIED           = "ncs"
+	ErrorCode_REPEAT_MESSAGE              = "rm"
+	ErrorCode_NO_GAME_SPECIFIED           = "ngs"
+	ErrorCode_OP_NOT_SPECIFIED            = "ons"
+	ErrorCode_TOO_MANY_SPECIAL_CHARACTERS = "tmsc"
+	ErrorCode_BAD_REQUEST                 = "br"
+	ErrorCode_NOT_ENOUGH_PLAYERS          = "nep"
+	ErrorCode_CARDCAST_CANNOT_FIND        = "ccf"
+	ErrorCode_NOT_IN_THAT_GAME            = "nitg"
+	ErrorCode_NO_SUCH_USER                = "nsu"
+	ErrorCode_NOT_REGISTERED              = "nr"
+	ErrorCode_BAD_OP                      = "bo"
+	ErrorCode_DO_NOT_HAVE_CARD            = "dnhc"
+	ErrorCode_NOT_YOUR_TURN               = "nyt"
+	ErrorCode_NOT_ENOUGH_SPACES           = "nes"
+	ErrorCode_ALREADY_STOPPED             = "aS"
+	ErrorCode_SESSION_EXPIRED             = "se"
+	ErrorCode_GAME_FULL                   = "gf"
+	ErrorCode_INVALID_CARD                = "ic"
 )
 
 var ErrorCodeMsgs = map[string]string{
@@ -245,6 +251,7 @@ var ErrorCodeMsgs = map[string]string{
 	"ic":   "Invalid card specified.",
 	"niu":  "Nickname is already in use.",
 	"ngs":  "No game specified.",
+	"nes":  "You must use more words in a message that long.",
 	"nitg": "You are not in that game.",
 	"tmu":  "There are too many users connected. Either join another server, or wait for a user to disconnect.",
 	"ig":   "Invalid game specified.",
@@ -256,14 +263,17 @@ var ErrorCodeMsgs = map[string]string{
 	"mtl":  "Messages cannot be longer than 200 characters.",
 	"in":   "Nickname must contain only upper and lower case letters, numbers, or underscores, must be 3 to 30 characters long, and must not start with a number.",
 	"serr": "An error occured on the server.",
+	"CL":   "Try turning caps lock off.",
 	"dnhc": "You don't have that card.",
 	"as":   "The game has already started.",
 	"nns":  "No nickname specified.",
 	"tf":   "You are chatting too fast. Wait a few seconds and try again.",
 	"na":   "You are not an administrator.",
 	"ons":  "Operation not specified.",
+	"rm":   "You can't repeat the same message multiple times in a row.",
 	"nj":   "You are not the judge.",
 	"rn":   "That nick is reserved.",
+	"tmsc": "You used too many special characters in that message.",
 }
 
 // ErrorInformation
@@ -277,6 +287,7 @@ const (
 // GameInfo
 const (
 	GameInfo_GAME_OPTIONS = "go"
+	GameInfo_CREATED      = "gca"
 	GameInfo_PLAYERS      = "P"
 	GameInfo_SPECTATORS   = "V"
 	GameInfo_HOST         = "H"
@@ -287,6 +298,7 @@ const (
 
 type GameInfo struct {
 	GameOptions GameOptionData `json:"go"`
+	Created     int64          `json:"gca"`
 	Players     []string       `json:"P"`
 	Spectators  []string       `json:"V"`
 	Host        string         `json:"H"`

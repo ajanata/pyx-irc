@@ -24,8 +24,10 @@
 package irc
 
 import (
+	"errors"
 	"fmt"
 	"github.com/ajanata/pyx-irc/pyx"
+	"strconv"
 	"strings"
 )
 
@@ -99,4 +101,22 @@ func makeGameTopic(game pyx.GameInfo) string {
 		game.Host, pyx.GameStateMsgs[game.State], passwdLabel, game.GameOptions.ScoreLimit,
 		len(game.Players), game.GameOptions.PlayerLimit, len(game.Spectators),
 		game.GameOptions.SpectatorLimit)
+}
+
+func (client *Client) getGameFromChannel(channel string) (int, bool, error) {
+	if strings.HasPrefix(channel, client.config.GameChannelPrefix) {
+		id, err := strconv.Atoi(channel[len(client.config.GameChannelPrefix):])
+		if err != nil {
+			goto badChannel
+		}
+		return id, false, nil
+	} else if strings.HasPrefix(channel, client.config.SpectateGameChannelPrefix) {
+		id, err := strconv.Atoi(channel[len(client.config.SpectateGameChannelPrefix):])
+		if err != nil {
+			goto badChannel
+		}
+		return id, true, nil
+	}
+badChannel:
+	return -1, false, errors.New("Channel name does not match game channel name format.")
 }

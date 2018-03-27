@@ -43,6 +43,7 @@ type Client struct {
 	BroadcastingUsers bool
 	GlobalChatEnabled bool
 	IncomingEvents    chan *LongPollResponse
+	ServerStarted     int64
 	User              *User
 	stop              chan bool
 	stopped           bool
@@ -182,11 +183,12 @@ func (client *Client) prepare() error {
 	if err != nil {
 		return err
 	}
-	// TODO save the card sets somewhere
 	if flResp.InProgress {
 		return fmt.Errorf("Session %s already in progress, not yet implemented (next=%s)",
 			client.sessionId, flResp.Next)
 	}
+	client.ServerStarted = flResp.ServerStarted
+	// TODO save the card sets somewhere
 	log.Debugf("Cards: %+v", flResp.CardSets)
 
 	return nil
@@ -258,6 +260,13 @@ func (client *Client) Whois(nick string) (*AjaxResponse, error) {
 func (client *Client) GameList() (*AjaxResponse, error) {
 	return client.send(map[string]string{
 		AjaxRequest_OP: AjaxOperation_GAME_LIST,
+	})
+}
+
+func (client *Client) GameInfo(gameId int) (*AjaxResponse, error) {
+	return client.send(map[string]string{
+		AjaxRequest_OP:      AjaxOperation_GET_GAME_INFO,
+		AjaxRequest_GAME_ID: strconv.Itoa(gameId),
 	})
 }
 
