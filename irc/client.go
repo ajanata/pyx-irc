@@ -600,6 +600,7 @@ func handleWhois(client *Client, msg Message) {
 		return
 	}
 
+	// TODO special case for bot nick
 	resp, err := client.pyx.Whois(msg.args[0])
 	if err != nil {
 		if resp.ErrorCode == pyx.ErrorCode_NO_SUCH_USER {
@@ -623,9 +624,25 @@ func handleWhois(client *Client, msg Message) {
 		client.data <- client.n.format(RplWhoisHost, client.nick, "%s :is connecting from %s", nick,
 			resp.IpAddress)
 	}
-	// TODO game chats
-	client.data <- client.n.format(RplWhoisChannels, client.nick, "%s :%s%s", nick, sigil,
-		client.config.GlobalChannel)
+
+	channels := sigil + client.config.GlobalChannel
+	if resp.GameId != nil {
+		channel := ""
+		if resp.GameInfo.Host == nick {
+			channel = "@"
+		}
+		prefix := client.config.GameChannelPrefix
+		for _, spectator := range resp.GameInfo.Spectators {
+			if spectator == nick {
+				prefix = client.config.SpectateGameChannelPrefix
+				break
+			}
+		}
+		channel = channel + prefix + strconv.Itoa(*resp.GameId)
+		channels = channels + " " + channel
+	}
+	client.data <- client.n.format(RplWhoisChannels, client.nick, "%s :%s", nick, channels)
+
 	client.data <- client.n.format(RplWhoisServer, client.nick, "%s %s :%s", nick,
 		client.config.AdvertisedName, client.config.Pyx.BaseAddress)
 	if sigil == pyx.Sigil_ADMIN {
@@ -633,8 +650,12 @@ func handleWhois(client *Client, msg Message) {
 			nick)
 	}
 	if len(resp.IdCode) > 0 {
-		client.data <- client.n.format(RplWhoisSpecial, client.nick, "%s :Identification code: %s",
+		client.data <- client.n.format(RplWhoisSpecial, client.nick, "%s :Verification code: %s",
 			nick, resp.IdCode)
+	}
+	if len(resp.ClientName) > 0 {
+		client.data <- client.n.format(RplWhoisSpecial, client.nick, "%s :Client: %s", nick,
+			resp.ClientName)
 	}
 	client.data <- client.n.format(RplWhoisIdle, client.nick, "%s %d %d :seconds idle, signon time",
 		nick, resp.Idle/1000, resp.ConnectedAt/1000)

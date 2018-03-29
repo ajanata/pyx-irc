@@ -117,7 +117,7 @@ type AjaxResponse struct {
 	PersistentId         string         `json:"pid"`
 	Games                []GameInfo     `json:"gl"`
 	Sigil                string         `json:"?"`
-	GameId               int            `json:"gid"`
+	GameId               *int           `json:"gid"`
 	MaxGames             int            `json:"mg"`
 	InProgress           bool           `json:"ip"`
 	GameOptions          GameOptionData `json:"go"`
@@ -416,6 +416,7 @@ const (
 	LongPollEvent_GAME_JUDGE_LEFT         = "gjl"
 	LongPollEvent_KICKED                  = "k"
 	LongPollEvent_KICKED_FROM_GAME_IDLE   = "kfgi"
+	LongPollEvent_FILTERED_CHAT           = "FC"
 	LongPollEvent_GAME_STATE_CHANGE       = "gsc"
 )
 
