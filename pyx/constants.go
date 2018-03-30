@@ -450,31 +450,31 @@ const (
 )
 
 type LongPollResponse struct {
-	PlayTimer        int              `json:"Pt"`
-	PlayerInfo       []GamePlayerInfo `json:"pi"`
-	From             string           `json:"f"`
-	WhiteCards       []WhiteCardData  `json:"wc"`
-	Event            string           `json:"E"`
-	Hand             []WhiteCardData  `json:"h"`
-	ErrorCode        string           `json:"ec"`
-	Message          string           `json:"m"`
-	WinningCard      WhiteCardData    `json:"WC"`
-	FromAdmin        bool             `json:"fa"`
-	Timestamp        int64            `json:"ts"`
-	GameInfo         GameInfo         `json:"gi"`
-	Error            bool             `json:"e"`
-	IdCode           string           `json:"idc"`
-	Reason           string           `json:"qr"`
-	Wall             bool             `json:"wall"`
-	RoundWinner      string           `json:"rw"`
-	Sigil            string           `json:"?"`
-	Emote            bool             `json:"me"`
-	CardcastDeckInfo string           `json:"cdi"`
-	GameId           *int             `json:"gid"`
-	Nickname         string           `json:"n"`
-	BlackCard        BlackCardData    `json:"bc"`
-	GameState        string           `json:"gs"`
-	Intermission     int              `json:"i"`
+	PlayTimer        int               `json:"Pt"`
+	PlayerInfo       []GamePlayerInfo  `json:"pi"`
+	From             string            `json:"f"`
+	WhiteCards       [][]WhiteCardData `json:"wc"`
+	Event            string            `json:"E"`
+	Hand             []WhiteCardData   `json:"h"`
+	ErrorCode        string            `json:"ec"`
+	Message          string            `json:"m"`
+	WinningCard      int               `json:"WC"`
+	FromAdmin        bool              `json:"fa"`
+	Timestamp        int64             `json:"ts"`
+	GameInfo         GameInfo          `json:"gi"`
+	Error            bool              `json:"e"`
+	IdCode           string            `json:"idc"`
+	Reason           string            `json:"qr"`
+	Wall             bool              `json:"wall"`
+	RoundWinner      string            `json:"rw"`
+	Sigil            string            `json:"?"`
+	Emote            bool              `json:"me"`
+	CardcastDeckInfo string            `json:"cdi"`
+	GameId           *int              `json:"gid"`
+	Nickname         string            `json:"n"`
+	BlackCard        BlackCardData     `json:"bc"`
+	GameState        string            `json:"gs"`
+	Intermission     int               `json:"i"`
 }
 
 // ReconnectNextAction

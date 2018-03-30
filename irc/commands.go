@@ -331,7 +331,7 @@ func (client *Client) getTopic(channel string, gameInfo *pyx.GameInfo) string {
 			return "Global chat (disabled)"
 		}
 	} else if gameInfo != nil {
-		return makeGameTopic(*gameInfo)
+		return makeGameTopic(gameInfo)
 	} else {
 		log.Errorf("Topic for channel %s requested but gameInfo is nil!", channel)
 		return "(error generating topic)"
@@ -703,6 +703,7 @@ func handleJoin(client *Client, msg Message) {
 		client.gameId = &gameId
 		// TODO move
 		client.gameIsSpectate = spectate
+		client.gameInProgress = false
 		client.joinChannel(msg.args[0])
 	} else {
 		// TODO support playable games
@@ -732,15 +733,15 @@ func (client *Client) getChannels() ([]ChannelInfo, error) {
 	for _, game := range resp.Games {
 		info := ChannelInfo{
 			name:       client.config.GameChannelPrefix + strconv.Itoa(game.Id),
-			totalUsers: totalUserCount(game),
-			topic:      makeGameTopic(game),
+			totalUsers: totalUserCount(&game),
+			topic:      makeGameTopic(&game),
 		}
 		games = append(games, info)
 		if game.GameOptions.SpectatorLimit > 0 {
 			info = ChannelInfo{
 				name:       client.config.SpectateGameChannelPrefix + strconv.Itoa(game.Id),
-				totalUsers: totalUserCount(game),
-				topic:      "SPECTATE: " + makeGameTopic(game),
+				totalUsers: totalUserCount(&game),
+				topic:      "SPECTATE: " + makeGameTopic(&game),
 			}
 			games = append(games, info)
 		}

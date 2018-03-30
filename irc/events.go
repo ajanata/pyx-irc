@@ -36,16 +36,19 @@ type Event = pyx.LongPollResponse
 type EventHandlerFunc func(*Client, Event)
 
 var EventHandlers = map[string]EventHandlerFunc{
-	pyx.LongPollEvent_BANNED:               eventBanned,
-	pyx.LongPollEvent_CHAT:                 eventChat,
-	pyx.LongPollEvent_KICKED:               eventKicked,
-	pyx.LongPollEvent_GAME_LIST_REFRESH:    eventIgnore,
-	pyx.LongPollEvent_GAME_PLAYER_JOIN:     eventGamePlayerJoin,
-	pyx.LongPollEvent_GAME_PLAYER_LEAVE:    eventGamePlayerLeave,
-	pyx.LongPollEvent_GAME_SPECTATOR_JOIN:  eventGamePlayerJoin,
-	pyx.LongPollEvent_GAME_SPECTATOR_LEAVE: eventGamePlayerLeave,
-	pyx.LongPollEvent_NEW_PLAYER:           eventNewPlayer,
-	pyx.LongPollEvent_PLAYER_LEAVE:         eventPlayerQuit,
+	pyx.LongPollEvent_BANNED:                  eventBanned,
+	pyx.LongPollEvent_CHAT:                    eventChat,
+	pyx.LongPollEvent_KICKED:                  eventKicked,
+	pyx.LongPollEvent_GAME_LIST_REFRESH:       eventIgnore,
+	pyx.LongPollEvent_GAME_PLAYER_INFO_CHANGE: eventIgnore,
+	pyx.LongPollEvent_GAME_PLAYER_JOIN:        eventGamePlayerJoin,
+	pyx.LongPollEvent_GAME_PLAYER_LEAVE:       eventGamePlayerLeave,
+	pyx.LongPollEvent_GAME_ROUND_COMPLETE:     eventGameRoundComplete,
+	pyx.LongPollEvent_GAME_SPECTATOR_JOIN:     eventGamePlayerJoin,
+	pyx.LongPollEvent_GAME_SPECTATOR_LEAVE:    eventGamePlayerLeave,
+	pyx.LongPollEvent_GAME_STATE_CHANGE:       eventGameStateChange,
+	pyx.LongPollEvent_NEW_PLAYER:              eventNewPlayer,
+	pyx.LongPollEvent_PLAYER_LEAVE:            eventPlayerQuit,
 }
 
 func eventNewPlayer(client *Client, event Event) {
@@ -143,6 +146,13 @@ func doKickOrBan(client *Client, msg string) {
 		client.config.BotNick, msg))
 }
 
+func (client *Client) sendTopicChangeForStartedGame() {
+	if !client.gameInProgress {
+		client.gameInProgress = true
+		client.sendTopicChange()
+	}
+}
+
 func (client *Client) sendTopicChange() {
 	channel := client.getGameChannel()
 	resp, err := client.pyx.GameInfo(*client.gameId)
@@ -155,9 +165,10 @@ func (client *Client) sendTopicChange() {
 	client.data <- fmt.Sprintf(":%s TOPIC %s :%s", client.botNickUserAtHost(), channel, topic)
 }
 
-func (client *Client) sendBotMessageToGame(msg string) {
+func (client *Client) sendBotMessageToGame(format string, args ...interface{}) {
+	// TODO deal with messages that are long than the IRC length limit?
 	client.data <- fmt.Sprintf(":%s PRIVMSG %s :%s", client.botNickUserAtHost(),
-		client.getGameChannel(), msg)
+		client.getGameChannel(), fmt.Sprintf(format, args...))
 }
 
 // also handles Game Spectator Join
@@ -178,12 +189,16 @@ func eventGamePlayerJoin(client *Client, event Event) {
 
 // also handles Game Spectator Leave
 func eventGamePlayerLeave(client *Client, event Event) {
+	client.processPlayerLeave(event, "Leaving")
+}
+
+func (client *Client) processPlayerLeave(event Event, reason string) {
 	if event.Nickname == client.nick {
 		// ignore leave for ourselves
 		return
 	}
-	client.data <- fmt.Sprintf(":%s PART %s", client.getNickUserAtHost(event.Nickname),
-		client.getGameChannel())
+	client.data <- fmt.Sprintf(":%s PART %s :%s", client.getNickUserAtHost(event.Nickname),
+		client.getGameChannel(), reason)
 	if event.Nickname == client.gameHost {
 		resp, err := client.pyx.GameInfo(*client.gameId)
 		if err != nil {
@@ -205,4 +220,77 @@ func eventGamePlayerLeave(client *Client, event Event) {
 		}
 	}
 	client.sendTopicChange()
+}
+
+func eventGameStateChange(client *Client, event Event) {
+	switch event.GameState {
+	case pyx.GameState_LOBBY:
+		client.sendTopicChange()
+		client.sendBotMessageToGame("The game has been reset to the lobby state.")
+		client.gameInProgress = false
+	case pyx.GameState_PLAYING:
+		client.sendTopicChangeForStartedGame()
+		client.sendBotMessageToGame("The black card for the next round is: %s",
+			blackCardText(event.BlackCard))
+		resp, err := client.pyx.GameInfo(*event.GameId)
+		if err != nil {
+			log.Errorf("Unable to obtain status for game %d after state change", *event.GameId)
+			return
+		}
+		judge := getJudge(&resp.PlayerInfo)
+		if judge == client.nick {
+			client.sendBotMessageToGame("You are judging this round.")
+		} else {
+			client.sendBotMessageToGame("The judge this round is %s.", judge)
+			if !client.gameIsSpectate {
+				// TODO show hand and ask for plays, and include the PLAY_TIMER
+			}
+		}
+	case pyx.GameState_JUDGING:
+		// save these for later
+		client.gamePlayedCards = &event.WhiteCards
+		cardPlural := ""
+		if len(event.WhiteCards[0]) > 1 {
+			cardPlural = "s"
+		}
+		client.sendBotMessageToGame("The white cards for this round are:")
+		for i, cards := range event.WhiteCards {
+			msg := fmt.Sprintf("(Selection %d)", i)
+			for _, card := range cards {
+				msg = fmt.Sprintf("%s [%s]", msg, whiteCardText(card))
+			}
+			client.sendBotMessageToGame(msg)
+		}
+		resp, err := client.pyx.GameInfo(*event.GameId)
+		if err != nil {
+			log.Errorf("Unable to obtain status for game %d after state change", *event.GameId)
+			return
+		}
+		judge := getJudge(&resp.PlayerInfo)
+		if judge == client.nick {
+			// TODO ask for judging
+		} else {
+			client.sendBotMessageToGame("Please wait while %s selects the winning card%s.", judge,
+				cardPlural)
+		}
+	default:
+		log.Errorf("Unknown game state %s", event.GameState)
+	}
+}
+
+func eventGameRoundComplete(client *Client, event Event) {
+	// so the white card winning ID is only one of the cards if it's a pick-multiple...
+	winningCard := ""
+	for _, cards := range *client.gamePlayedCards {
+		// the provided ID will always be the first card that a player played, so we can just check
+		// that one
+		if cards[0].Id == event.WinningCard {
+			for _, card := range cards {
+				winningCard = fmt.Sprintf("%s [%s]", winningCard, whiteCardText(card))
+			}
+			break
+		}
+	}
+	// yes that missing space is intentional, it'll be provided by the above formatting
+	client.sendBotMessageToGame("The round was won by %s with%s.", event.RoundWinner, winningCard)
 }

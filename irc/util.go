@@ -88,11 +88,13 @@ func makeEmote(msg string) string {
 	return fmt.Sprintf("%cACTION %s%c", CtcpMagic, msg, CtcpMagic)
 }
 
-func totalUserCount(game pyx.GameInfo) int {
+func totalUserCount(game *pyx.GameInfo) int {
 	return len(game.Players) + len(game.Spectators)
 }
 
-func makeGameTopic(game pyx.GameInfo) string {
+func makeGameTopic(game *pyx.GameInfo) string {
+	// TODO include information about card sets, but cardcast stuff isn't included in this data set
+	// at all...
 	passwdLabel := ""
 	if game.HasPassword {
 		passwdLabel = "(Has password.) "
@@ -130,4 +132,25 @@ func (client *Client) getGameChannel() string {
 	} else {
 		return client.config.GameChannelPrefix + strconv.Itoa(*client.gameId)
 	}
+}
+
+func blackCardText(card pyx.BlackCardData) string {
+	return fmt.Sprintf("(Pick %d, source %s) %s", card.Pick, card.Watermark, card.Text)
+}
+
+func whiteCardText(card pyx.WhiteCardData) string {
+	return fmt.Sprintf("%s (source %s)", card.Text, card.Watermark)
+}
+
+func getJudge(playerInfo *[]pyx.GamePlayerInfo) string {
+	for _, player := range *playerInfo {
+		if player.Status == pyx.GamePlayerStatus_JUDGE ||
+			player.Status == pyx.GamePlayerStatus_JUDGING {
+			return player.Name
+			break
+		}
+	}
+	// This should be impossible
+	log.Error("getJudge called without a judge in the player info?!")
+	return ""
 }

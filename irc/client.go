@@ -52,7 +52,10 @@ type Client struct {
 	// if we are spectating the game we are in
 	gameIsSpectate bool
 	// the host of the game we are in, so we can notice if they leave
-	gameHost string
+	gameHost       string
+	gameInProgress bool
+	// the cards played in the most recently completed round
+	gamePlayedCards *[][]pyx.WhiteCardData
 }
 
 type ChannelInfo struct {

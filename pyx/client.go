@@ -113,7 +113,6 @@ func (client *Client) receive() {
 				res = t
 			}
 
-			log.Debugf("Result: %+v", res)
 			switch v := res.(type) {
 			case *LongPollResponse:
 				// bare object, likely an error or no-op
