@@ -37,20 +37,21 @@ var validNickRegex = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]{2,29}$")
 
 // it'd probably be better if this didn't talk directly to the pyx stuff from here...
 type Client struct {
-	socket     net.Conn
-	addr       string
-	reader     *bufio.Scanner
-	writer     *bufio.Writer
-	data       chan string
-	close      chan bool
-	registered bool
-	password   string
-	nick       string
-	hasUser    bool
-	pyx        *pyx.Client
-	config     *Config
-	n          *numerics
-	gameId     *int
+	socket         net.Conn
+	addr           string
+	reader         *bufio.Scanner
+	writer         *bufio.Writer
+	data           chan string
+	close          chan bool
+	registered     bool
+	password       string
+	nick           string
+	hasUser        bool
+	pyx            *pyx.Client
+	config         *Config
+	n              *numerics
+	gameId         *int
+	gameIsSpectate bool
 }
 
 type ChannelInfo struct {
@@ -69,12 +70,14 @@ var UnregisteredHandlers = map[string]IrcHandlerFunc{
 }
 var RegisteredHandlers = map[string]IrcHandlerFunc{
 	"CAP":     handleCap,
+	"JOIN":    handleJoin,
 	"LIST":    handleList,
 	"LUSERS":  handleLUsers,
 	"MODE":    handleMode,
 	"MOTD":    handleMotd,
 	"NAMES":   handleNames,
 	"NICK":    handleRegisteredNick,
+	"PART":    handlePart,
 	"PASS":    handleRegisteredPassOrUser,
 	"PING":    handlePing,
 	"PRIVMSG": handlePrivmsg,
@@ -305,18 +308,13 @@ func (client *Client) sendLUsers() {
 
 // Send the stuff to the IRC client required when joining a channel. Assumes that the channel is
 // valid to join.
-func (client *Client) joinChannel(channel string) error {
-	if channel != client.config.GlobalChannel {
-		// TODO actually join the game on pyx
-	}
+func (client *Client) joinChannel(channel string) {
 	client.data <- fmt.Sprintf(":%s JOIN :%s", client.getNickUserAtHost(client.nick), channel)
 
 	client.handleTopicImpl(channel)
 	client.handleNamesImpl(channel)
 	// unreal doesn't shove these down automatically but... why not
 	client.handleModeImpl(channel)
-
-	return nil
 }
 
 func handleNames(client *Client, msg Message) {
@@ -339,10 +337,34 @@ func (client *Client) handleNamesImpl(args ...string) {
 		for _, line := range joinIntoLines(300, append(names, "&"+client.config.BotNick)) {
 			client.data <- client.n.format(RplNames, client.nick, "= %s :%s", args[0], line)
 		}
-		client.data <- client.n.format(RplEndNames, client.nick, "%s :End of /NAMES list", args[0])
 	} else {
-		// TODO per-game channels
+		gameId, _, err := client.getGameFromChannel(args[0])
+		if err != nil || gameId != *client.gameId {
+			client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :Not in channel",
+				args[0])
+			return
+		}
+		resp, err := client.pyx.GameInfo(gameId)
+		if err != nil {
+			client.data <- client.n.format(ErrServiceConfused, client.nick,
+				"%s :Cannot retrieve names: %s", args[0], err)
+			return
+		}
+		players := []string{}
+		for _, player := range resp.GameInfo.Players {
+			if player == resp.GameInfo.Host {
+				players = append(players, "@"+player)
+			} else {
+				players = append(players, player)
+			}
+		}
+		// TODO a proper length based on 512 minus broilerplate
+		for _, line := range joinIntoLines(300, append(append(players, resp.GameInfo.Spectators...),
+			"&"+client.config.BotNick)) {
+			client.data <- client.n.format(RplNames, client.nick, "= %s :%s", args[0], line)
+		}
 	}
+	client.data <- client.n.format(RplEndNames, client.nick, "%s :End of /NAMES list", args[0])
 }
 
 func handleTopic(client *Client, msg Message) {
@@ -362,7 +384,7 @@ func (client *Client) handleTopicImpl(args ...string) {
 		if args[0] == client.config.GlobalChannel {
 			topic = client.getTopic(args[0], nil)
 			set = client.pyx.ServerStarted
-			setBy = client.config.BotNick
+			setBy = client.botNickUserAtHost()
 		} else if client.gameId == nil {
 			// user isn't in a game so they can't request a topic for a game
 			client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :Not in channel.",
@@ -391,7 +413,7 @@ func (client *Client) handleTopicImpl(args ...string) {
 			}
 			topic = client.getTopic(args[0], &resp.GameInfo)
 			set = resp.GameInfo.Created
-			setBy = resp.GameInfo.Host
+			setBy = client.getNickUserAtHost(resp.GameInfo.Host)
 		}
 		client.data <- client.n.format(RplTopic, client.nick, "%s :%s", args[0], topic)
 		client.data <- client.n.format(RplTopicWhoTime, client.nick, "%s %s %d", args[0], setBy,
@@ -573,23 +595,38 @@ func handlePrivmsg(client *Client, msg Message) {
 			"PRIVMSG :Not enough parameters")
 		return
 	}
-	// TODO game chats
-	if msg.args[0] != client.config.GlobalChannel {
-		// unreal uses this for either
-		client.data <- client.n.format(ErrNoSuchNick, client.nick, "%s :No such nick/channel",
-			msg.args[0])
-		return
-	}
 	if len(msg.args) == 1 || len(msg.args[1]) == 0 {
 		client.data <- client.n.format(ErrNoTextToSend, client.nick, ":No text to send")
 		return
 	}
 
-	action, text := isEmote(msg.args[1])
-	err := client.pyx.SendGlobalChat(text, action)
+	channel := msg.args[0]
+	isEmote, text := isEmote(msg.args[1])
+	var err error
+	if channel == client.config.GlobalChannel {
+		err = client.pyx.SendGlobalChat(text, isEmote)
+	} else if !strings.HasPrefix(channel, "#") {
+		// trying to send a private message... we don't support that
+		// unreal uses this for either
+		client.data <- client.n.format(ErrNoSuchNick, client.nick, "%s :No such nick/channel",
+			channel)
+		return
+	} else {
+		// we need to let err belong to the outer scope
+		var gameId int
+		gameId, _, err = client.getGameFromChannel(channel)
+		if err != nil || gameId != *client.gameId {
+			// unreal uses this for either
+			client.data <- client.n.format(ErrNoSuchNick, client.nick, "%s :No such nick/channel",
+				channel)
+			return
+		}
+		err = client.pyx.SendGameChat(gameId, text, isEmote)
+	}
+
 	if err != nil {
 		client.data <- client.n.format(ErrCannotSendToChan, client.nick,
-			"%s :Cannot send to channel: %s", msg.args[0], err)
+			"%s :Cannot send to channel: %s", channel, err)
 	}
 }
 
@@ -677,6 +714,105 @@ func handleList(client *Client, msg Message) {
 			channel.totalUsers, channel.topic)
 	}
 	client.data <- client.n.format(RplListEnd, client.nick, ":End of /LIST")
+}
+
+func handlePart(client *Client, msg Message) {
+	if len(msg.args) == 0 {
+		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
+			"PART :Not enough parameters")
+		return
+	}
+	if msg.args[0] == client.config.GlobalChannel {
+		// don't let them do that. might have to send a response to the irc client?
+		log.Debugf("User %s tried to leave %s", client.nick, client.config.GlobalChannel)
+		return
+	}
+	game, _, err := client.getGameFromChannel(msg.args[0])
+	if err != nil || game != *client.gameId {
+		client.data <- client.n.format(ErrNoSuchChannel, client.nick, "%s :No such channel",
+			msg.args[0])
+		return
+	}
+
+	resp, err := client.pyx.LeaveGame(game)
+	// if the server thinks they're not in the game, then we want to process a successful removal
+	// because this is a really weird state that shouldn't happen but we need to synchronize
+	if err != nil && resp.ErrorCode != pyx.ErrorCode_NOT_IN_THAT_GAME {
+		client.data <- client.n.format(ErrServiceConfused, client.nick,
+			"%s :Unable to leave channel: %s", msg.args[0], err)
+	} else {
+		client.gameId = nil
+		client.data <- fmt.Sprintf(":%s PART %s", client.getNickUserAtHost(client.nick),
+			msg.args[0])
+	}
+}
+
+func handleJoin(client *Client, msg Message) {
+	if len(msg.args) == 0 {
+		client.data <- client.n.format(ErrNeedMoreParams, client.nick,
+			"JOIN :Not enough parameters")
+		return
+	}
+	if client.gameId != nil {
+		// only allowed to have one game at a time
+		client.data <- client.n.format(ErrTooManyChannels, client.nick,
+			"%s :Too many joined channels.", msg.args[0])
+		return
+	}
+
+	gameId, spectate, err := client.getGameFromChannel(msg.args[0])
+	if err != nil {
+		client.data <- client.n.format(ErrForbiddenChannel, client.nick,
+			"%s :Forbidden channel: %s", msg.args[0], err)
+		return
+	}
+
+	key := ""
+	if len(msg.args) >= 2 {
+		key = msg.args[1]
+	}
+
+	// TODO create a new game
+	var resp *pyx.AjaxResponse
+	if spectate {
+		resp, err = client.pyx.SpectateGame(gameId, key)
+		// TODO move this out to be common code once playable games are supported
+		if err != nil {
+			switch resp.ErrorCode {
+			case pyx.ErrorCode_CANNOT_JOIN_ANOTHER_GAME:
+				// we're in a desynchronized state at this point, since we didn't know the user was
+				// in a game...
+				log.Errorf("Desync detected: User %s, pyx server said they're already in a game",
+					client.nick)
+				client.data <- client.n.format(ErrTooManyChannels, client.nick,
+					"%s :Too many joined channels", msg.args[0])
+			case pyx.ErrorCode_GAME_FULL:
+				client.data <- client.n.format(ErrChannelIsFull, client.nick, "%s :Channel is full",
+					msg.args[0])
+			case pyx.ErrorCode_INVALID_GAME:
+				// we will support a special channel name to create a new game, since the server
+				// assigns the game IDs
+				client.data <- client.n.format(ErrNoSuchChannel, client.nick, "%s :No such channel",
+					msg.args[0])
+			case pyx.ErrorCode_WRONG_PASSWORD:
+				client.data <- client.n.format(ErrBadChannelKey, client.nick, "%s :Wrong key",
+					msg.args[0])
+			default:
+				client.data <- client.n.format(ErrServiceConfused, client.nick,
+					"%s :Cannot join game: %s", msg.args[0], err)
+			}
+			return
+		}
+		client.gameId = &gameId
+		// TODO move
+		client.gameIsSpectate = spectate
+		client.joinChannel(msg.args[0])
+	} else {
+		// TODO support playable games
+		// resp, err := client.pyx.JoinGame(gameId, key)
+		client.data <- client.n.format(ErrForbiddenChannel, client.nick,
+			"%s :Cannot join game playing channels", msg.args[0])
+	}
 }
 
 func (client *Client) getChannels() ([]ChannelInfo, error) {
@@ -803,8 +939,17 @@ func eventChat(client *Client, event Event) {
 	var target string
 	// game chat is the same event, but has the game id field
 	if event.GameId != nil {
-		// TODO game chat
-		// but we can't get game chat until we can join a game so don't worry about it yet
+		if *event.GameId == *client.gameId {
+			target = client.config.GameChannelPrefix + strconv.Itoa(*event.GameId)
+			if client.gameIsSpectate {
+				target = client.config.SpectateGameChannelPrefix + strconv.Itoa(*event.GameId)
+			}
+		} else {
+			// uhhh wtf??
+			log.Errorf("Received game chat for un-joined gamed %d (joined %d)", *event.GameId,
+				*client.gameId)
+			return
+		}
 	} else {
 		target = client.config.GlobalChannel
 	}

@@ -99,33 +99,33 @@ const (
 )
 
 type AjaxResponse struct {
-	Names                []string       `json:"nl"`
-	ClientName           string         `json:"cn"`
-	PlayerInfo           GamePlayerInfo `json:"pi"`
-	ConnectedAt          int64          `json:"ca"`
-	WhiteCards           []int          `json:"wc"`
-	Hand                 []int          `json:"h"`
-	ErrorCode            string         `json:"ec"`
-	ServerStarted        int64          `json:"SS"`
-	Next                 string         `json:"next"`
-	GameInfo             GameInfo       `json:"gi"`
-	Error                bool           `json:"e"`
-	GameStateDescription string         `json:"gss"`
-	IdCode               string         `json:"idc"`
-	CardSets             []CardSetData  `json:"css"`
-	Serial               int            `json:"s"`
-	PersistentId         string         `json:"pid"`
-	Games                []GameInfo     `json:"gl"`
-	Sigil                string         `json:"?"`
-	GameId               *int           `json:"gid"`
-	MaxGames             int            `json:"mg"`
-	InProgress           bool           `json:"ip"`
-	GameOptions          GameOptionData `json:"go"`
-	Nickname             string         `json:"n"`
-	BlackCard            int            `json:"bc"`
-	Idle                 int64          `json:"idl"`
-	CardId               int            `json:"cid"`
-	IpAddress            string         `json:"IP"`
+	Names                []string         `json:"nl"`
+	ClientName           string           `json:"cn"`
+	PlayerInfo           []GamePlayerInfo `json:"pi"`
+	ConnectedAt          int64            `json:"ca"`
+	WhiteCards           []int            `json:"wc"`
+	Hand                 []int            `json:"h"`
+	ErrorCode            string           `json:"ec"`
+	ServerStarted        int64            `json:"SS"`
+	Next                 string           `json:"next"`
+	GameInfo             GameInfo         `json:"gi"`
+	Error                bool             `json:"e"`
+	GameStateDescription string           `json:"gss"`
+	IdCode               string           `json:"idc"`
+	CardSets             []CardSetData    `json:"css"`
+	Serial               int              `json:"s"`
+	PersistentId         string           `json:"pid"`
+	Games                []GameInfo       `json:"gl"`
+	Sigil                string           `json:"?"`
+	GameId               *int             `json:"gid"`
+	MaxGames             int              `json:"mg"`
+	InProgress           bool             `json:"ip"`
+	GameOptions          GameOptionData   `json:"go"`
+	Nickname             string           `json:"n"`
+	BlackCard            int              `json:"bc"`
+	Idle                 int64            `json:"idl"`
+	CardId               int              `json:"cid"`
+	IpAddress            string           `json:"IP"`
 }
 
 // BlackCardData

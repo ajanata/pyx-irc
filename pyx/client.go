@@ -231,6 +231,10 @@ func (client *Client) SendGlobalChat(msg string, emote bool) error {
 	return client.sendChat(msg, emote, false, NoGameIdSentinel)
 }
 
+func (client *Client) SendGameChat(gameId int, msg string, emote bool) error {
+	return client.sendChat(msg, emote, false, gameId)
+}
+
 func (client *Client) sendChat(msg string, emote bool, wall bool, gameId int) error {
 	req := map[string]string{
 		AjaxRequest_OP:      AjaxOperation_CHAT,
@@ -243,6 +247,7 @@ func (client *Client) sendChat(msg string, emote bool, wall bool, gameId int) er
 		req[AjaxRequest_WALL] = "true"
 	}
 	if gameId >= 0 {
+		req[AjaxRequest_OP] = AjaxOperation_GAME_CHAT
 		req[AjaxRequest_GAME_ID] = strconv.Itoa(gameId)
 	}
 
@@ -278,6 +283,29 @@ func (client *Client) LogOut() {
 	client.Close()
 }
 
+func (client *Client) LeaveGame(gameId int) (*AjaxResponse, error) {
+	return client.send(map[string]string{
+		AjaxRequest_OP:      AjaxOperation_LEAVE_GAME,
+		AjaxRequest_GAME_ID: strconv.Itoa(gameId),
+	})
+}
+
+func (client *Client) SpectateGame(gameId int, password string) (*AjaxResponse, error) {
+	return client.send(map[string]string{
+		AjaxRequest_OP:       AjaxOperation_SPECTATE_GAME,
+		AjaxRequest_GAME_ID:  strconv.Itoa(gameId),
+		AjaxRequest_PASSWORD: password,
+	})
+}
+
+func (client *Client) JoinGame(gameId int, password string) (*AjaxResponse, error) {
+	return client.send(map[string]string{
+		AjaxRequest_OP:       AjaxOperation_JOIN_GAME,
+		AjaxRequest_GAME_ID:  strconv.Itoa(gameId),
+		AjaxRequest_PASSWORD: password,
+	})
+}
+
 // Make the request on the server, and check for PYX application errors.
 func (client *Client) send(request map[string]string) (*AjaxResponse, error) {
 	resp, err := client.sendNoErrorCheck(request)
@@ -289,6 +317,7 @@ func (client *Client) send(request map[string]string) (*AjaxResponse, error) {
 // ErrorCodeMsg for the ERROR_CODE is returned. If neither of these are true, then nil is returned.
 func checkForError(response *AjaxResponse, reqError error) error {
 	if reqError != nil {
+		log.Errorf("Request error: %s", reqError)
 		return reqError
 	}
 	if response.Error {
@@ -300,6 +329,7 @@ func checkForError(response *AjaxResponse, reqError error) error {
 // Same as checkForError but for long polls instead of requests.
 func checkPollForError(response *LongPollResponse, reqError error) error {
 	if reqError != nil {
+		log.Errorf("Request error: %s", reqError)
 		return reqError
 	}
 	if response.Error {
