@@ -120,3 +120,14 @@ func (client *Client) getGameFromChannel(channel string) (int, bool, error) {
 badChannel:
 	return -1, false, errors.New("Channel name does not match game channel name format.")
 }
+
+func (client *Client) getGameChannel() string {
+	if client.gameId == nil {
+		return ""
+	}
+	if client.gameIsSpectate {
+		return client.config.SpectateGameChannelPrefix + strconv.Itoa(*client.gameId)
+	} else {
+		return client.config.GameChannelPrefix + strconv.Itoa(*client.gameId)
+	}
+}

@@ -35,21 +35,24 @@ var validNickRegex = regexp.MustCompile("^[a-zA-Z_][a-zA-Z0-9_]{2,29}$")
 
 // it'd probably be better if this didn't talk directly to the pyx stuff from here...
 type Client struct {
-	socket         net.Conn
-	addr           string
-	reader         *bufio.Scanner
-	writer         *bufio.Writer
-	data           chan string
-	close          chan bool
-	registered     bool
-	password       string
-	nick           string
-	hasUser        bool
-	pyx            *pyx.Client
-	config         *Config
-	n              *numerics
-	gameId         *int
+	socket     net.Conn
+	addr       string
+	reader     *bufio.Scanner
+	writer     *bufio.Writer
+	data       chan string
+	close      chan bool
+	registered bool
+	password   string
+	nick       string
+	hasUser    bool
+	pyx        *pyx.Client
+	config     *Config
+	n          *numerics
+	gameId     *int
+	// if we are spectating the game we are in
 	gameIsSpectate bool
+	// the host of the game we are in, so we can notice if they leave
+	gameHost string
 }
 
 type ChannelInfo struct {
@@ -128,6 +131,7 @@ func (client *Client) handleIncomingRegistered(msg Message) {
 func (client *Client) dispatchPyxEvents() {
 	defer func() {
 		// this is dumb and really should be refactored to avoid
+		// this is also really bad cuz it'll eat segfaults
 		if r := recover(); r != nil {
 			log.Warningf("Recovered from panic, probably due to user quitting: %v", r)
 		}

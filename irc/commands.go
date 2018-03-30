@@ -247,8 +247,10 @@ func (client *Client) handleNamesImpl(args ...string) {
 		for _, player := range resp.GameInfo.Players {
 			if player == resp.GameInfo.Host {
 				players = append(players, "@"+player)
+				// this is a dumb place to do it, but we have the required info here...
+				client.gameHost = player
 			} else {
-				players = append(players, player)
+				players = append(players, "+"+player)
 			}
 		}
 		// TODO a proper length based on 512 minus broilerplate
@@ -629,8 +631,10 @@ func handlePart(client *Client, msg Message) {
 
 	resp, err := client.pyx.LeaveGame(game)
 	// if the server thinks they're not in the game, then we want to process a successful removal
-	// because this is a really weird state that shouldn't happen but we need to synchronize
-	if err != nil && resp.ErrorCode != pyx.ErrorCode_NOT_IN_THAT_GAME {
+	// because this is a really weird state that shouldn't happen but we need to synchronize.
+	// We probably would only ever see INVALID_GAME here
+	if err != nil && resp.ErrorCode != pyx.ErrorCode_NOT_IN_THAT_GAME &&
+		resp.ErrorCode != pyx.ErrorCode_INVALID_GAME {
 		client.data <- client.n.format(ErrServiceConfused, client.nick,
 			"%s :Unable to leave channel: %s", msg.args[0], err)
 	} else {

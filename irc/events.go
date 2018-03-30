@@ -36,12 +36,16 @@ type Event = pyx.LongPollResponse
 type EventHandlerFunc func(*Client, Event)
 
 var EventHandlers = map[string]EventHandlerFunc{
-	pyx.LongPollEvent_BANNED:            eventBanned,
-	pyx.LongPollEvent_CHAT:              eventChat,
-	pyx.LongPollEvent_KICKED:            eventKicked,
-	pyx.LongPollEvent_GAME_LIST_REFRESH: eventIgnore,
-	pyx.LongPollEvent_NEW_PLAYER:        eventNewPlayer,
-	pyx.LongPollEvent_PLAYER_LEAVE:      eventPlayerQuit,
+	pyx.LongPollEvent_BANNED:               eventBanned,
+	pyx.LongPollEvent_CHAT:                 eventChat,
+	pyx.LongPollEvent_KICKED:               eventKicked,
+	pyx.LongPollEvent_GAME_LIST_REFRESH:    eventIgnore,
+	pyx.LongPollEvent_GAME_PLAYER_JOIN:     eventGamePlayerJoin,
+	pyx.LongPollEvent_GAME_PLAYER_LEAVE:    eventGamePlayerLeave,
+	pyx.LongPollEvent_GAME_SPECTATOR_JOIN:  eventGamePlayerJoin,
+	pyx.LongPollEvent_GAME_SPECTATOR_LEAVE: eventGamePlayerLeave,
+	pyx.LongPollEvent_NEW_PLAYER:           eventNewPlayer,
+	pyx.LongPollEvent_PLAYER_LEAVE:         eventPlayerQuit,
 }
 
 func eventNewPlayer(client *Client, event Event) {
@@ -137,4 +141,68 @@ func doKickOrBan(client *Client, msg string) {
 
 	client.disconnect(fmt.Sprintf("%s (Killed (%s (%s)))", client.config.AdvertisedName,
 		client.config.BotNick, msg))
+}
+
+func (client *Client) sendTopicChange() {
+	channel := client.getGameChannel()
+	resp, err := client.pyx.GameInfo(*client.gameId)
+	if err != nil {
+		log.Errorf("Unable to retrieve game %d info for player join topic update: %s",
+			*client.gameId, err)
+		return
+	}
+	topic := client.getTopic(channel, &resp.GameInfo)
+	client.data <- fmt.Sprintf(":%s TOPIC %s :%s", client.botNickUserAtHost(), channel, topic)
+}
+
+func (client *Client) sendBotMessageToGame(msg string) {
+	client.data <- fmt.Sprintf(":%s PRIVMSG %s :%s", client.botNickUserAtHost(),
+		client.getGameChannel(), msg)
+}
+
+// also handles Game Spectator Join
+func eventGamePlayerJoin(client *Client, event Event) {
+	if event.Nickname == client.nick {
+		// ignore join events for ourselves
+		return
+	}
+	nick := event.Nickname
+	channel := client.getGameChannel()
+	client.data <- fmt.Sprintf(":%s JOIN %s", client.getNickUserAtHost(nick), channel)
+	if event.Event == pyx.LongPollEvent_GAME_PLAYER_JOIN {
+		client.data <- fmt.Sprintf(":%s MODE %s +v %s", client.botNickUserAtHost(), channel, nick)
+	}
+
+	client.sendTopicChange()
+}
+
+// also handles Game Spectator Leave
+func eventGamePlayerLeave(client *Client, event Event) {
+	if event.Nickname == client.nick {
+		// ignore leave for ourselves
+		return
+	}
+	client.data <- fmt.Sprintf(":%s PART %s", client.getNickUserAtHost(event.Nickname),
+		client.getGameChannel())
+	if event.Nickname == client.gameHost {
+		resp, err := client.pyx.GameInfo(*client.gameId)
+		if err != nil {
+			if resp.ErrorCode == pyx.ErrorCode_INVALID_GAME {
+				// the game has been destroyed since all non-spectators left. yes, the server
+				// doesn't actually tell spectators about this...
+				log.Debugf("We got kicked from game %d!", *client.gameId)
+				client.data <- fmt.Sprintf(":%s KICK %s %s :Forcibly removed by server.",
+					client.botNickUserAtHost(), client.getGameChannel(), client.nick)
+				client.gameId = nil
+				return
+			} else {
+				log.Errorf("Cannot retrieve game info for game %d to determine new host",
+					*client.gameId)
+			}
+		} else {
+			client.data <- fmt.Sprintf(":%s MODE %s +o %s", client.botNickUserAtHost(),
+				client.getGameChannel(), resp.GameInfo.Host)
+		}
+	}
+	client.sendTopicChange()
 }
