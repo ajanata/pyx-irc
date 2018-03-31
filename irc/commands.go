@@ -729,7 +729,7 @@ func (client *Client) getChannels() ([]ChannelInfo, error) {
 	userCount := len(names)
 
 	games := []ChannelInfo{{
-		name:       "global",
+		name:       client.config.GlobalChannel,
 		totalUsers: userCount + 1,
 		topic:      client.getTopic(client.config.GlobalChannel, nil),
 	}}
