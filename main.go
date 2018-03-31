@@ -42,7 +42,7 @@ func main() {
 	stdErrLeveled := logging.AddModuleLevel(backendStdErr)
 	level, err := logging.LogLevel(config.LogLevel)
 	if err != nil {
-		fmt.Println("Unable to configure logging: %s", err)
+		fmt.Printf("Unable to configure logging: %s", err)
 		return
 	}
 	stdErrLeveled.SetLevel(level, "")
