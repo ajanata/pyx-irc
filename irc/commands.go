@@ -206,8 +206,6 @@ func (client *Client) joinChannel(channel string) {
 
 	client.handleTopicImpl(channel)
 	client.handleNamesImpl(channel)
-	// unreal doesn't shove these down automatically but... why not
-	client.handleModeImpl(channel)
 }
 
 func handleNames(client *Client, msg Message) {
@@ -479,8 +477,13 @@ func handleWho(client *Client, msg Message) {
 			target = client.config.GlobalChannel
 		}
 		client.data <- client.n.format(RplEndOfWho, client.nick, "%s :End of /WHO list", target)
+	} else if msg.args[0] == client.getGameChannel() {
+		// TODO per-game channels, send something so irssi doesn't keep waiting
+		client.data <- client.n.format(RplEndOfWho, client.nick, "%s :End of /WHO list",
+			msg.args[0])
 	} else {
-		// TODO per-game channels
+		client.data <- client.n.format(ErrNotOnChannel, client.nick, "%s :Not in channel",
+			msg.args[0])
 	}
 }
 
