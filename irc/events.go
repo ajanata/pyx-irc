@@ -36,17 +36,22 @@ type Event = pyx.LongPollResponse
 type EventHandlerFunc func(*Client, Event)
 
 var EventHandlers = map[string]EventHandlerFunc{
-	pyx.LongPollEvent_BANNED:                  eventBanned,
-	pyx.LongPollEvent_CHAT:                    eventChat,
-	pyx.LongPollEvent_KICKED:                  eventKicked,
-	pyx.LongPollEvent_GAME_LIST_REFRESH:       eventIgnore,
+	pyx.LongPollEvent_BANNED:               eventBanned,
+	pyx.LongPollEvent_CHAT:                 eventChat,
+	pyx.LongPollEvent_KICKED:               eventKicked,
+	pyx.LongPollEvent_GAME_BLACK_RESHUFFLE: eventGameBlackShuffle,
+	pyx.LongPollEvent_GAME_LIST_REFRESH:    eventIgnore,
+	// TODO implement this? We can say when players played a card, if we want to...
 	pyx.LongPollEvent_GAME_PLAYER_INFO_CHANGE: eventIgnore,
 	pyx.LongPollEvent_GAME_PLAYER_JOIN:        eventGamePlayerJoin,
+	pyx.LongPollEvent_GAME_PLAYER_KICKED_IDLE: eventGamePlayerKickedIdle,
 	pyx.LongPollEvent_GAME_PLAYER_LEAVE:       eventGamePlayerLeave,
+	pyx.LongPollEvent_GAME_PLAYER_SKIPPED:     eventGamePlayerSkipped,
 	pyx.LongPollEvent_GAME_ROUND_COMPLETE:     eventGameRoundComplete,
 	pyx.LongPollEvent_GAME_SPECTATOR_JOIN:     eventGamePlayerJoin,
 	pyx.LongPollEvent_GAME_SPECTATOR_LEAVE:    eventGamePlayerLeave,
 	pyx.LongPollEvent_GAME_STATE_CHANGE:       eventGameStateChange,
+	pyx.LongPollEvent_GAME_WHITE_RESHUFFLE:    eventGameWhiteShuffle,
 	pyx.LongPollEvent_NEW_PLAYER:              eventNewPlayer,
 	pyx.LongPollEvent_PLAYER_LEAVE:            eventPlayerQuit,
 }
@@ -56,7 +61,6 @@ func eventNewPlayer(client *Client, event Event) {
 		// we don't care about seeing ourselves connect
 		return
 	}
-	// TODO we need to do something for a hostname for them
 	client.data <- fmt.Sprintf(":%s JOIN :%s", client.getNickUserAtHost(event.Nickname),
 		client.config.GlobalChannel)
 	mode := "+"
@@ -147,6 +151,8 @@ func doKickOrBan(client *Client, msg string) {
 }
 
 func (client *Client) sendTopicChangeForStartedGame() {
+	// we still end up showing the topic change if the game was already in progress when the user
+	// joined... oh well
 	if !client.gameInProgress {
 		client.gameInProgress = true
 		client.sendTopicChange()
@@ -173,7 +179,7 @@ func (client *Client) sendBotMessageToGame(format string, args ...interface{}) {
 
 // also handles Game Spectator Join
 func eventGamePlayerJoin(client *Client, event Event) {
-	if event.Nickname == client.nick {
+	if event.Nickname == client.pyx.User.Name {
 		// ignore join events for ourselves
 		return
 	}
@@ -189,16 +195,23 @@ func eventGamePlayerJoin(client *Client, event Event) {
 
 // also handles Game Spectator Leave
 func eventGamePlayerLeave(client *Client, event Event) {
-	client.processPlayerLeave(event, "Leaving")
-}
-
-func (client *Client) processPlayerLeave(event Event, reason string) {
-	if event.Nickname == client.nick {
+	if event.Nickname == client.pyx.User.Name {
 		// ignore leave for ourselves
 		return
 	}
-	client.data <- fmt.Sprintf(":%s PART %s :%s", client.getNickUserAtHost(event.Nickname),
-		client.getGameChannel(), reason)
+	client.data <- fmt.Sprintf(":%s PART %s :Leaving", client.getNickUserAtHost(event.Nickname),
+		client.getGameChannel())
+	client.processPlayerLeave(event)
+}
+
+func eventGamePlayerKickedIdle(client *Client, event Event) {
+	// TODO handle us being kicked for idle once we can play in games
+	client.data <- fmt.Sprintf(":%s KICK %s %s :Idle for too many rounds",
+		client.botNickUserAtHost(), client.getGameChannel(), event.Nickname)
+	client.processPlayerLeave(event)
+}
+
+func (client *Client) processPlayerLeave(event Event) {
 	if event.Nickname == client.gameHost {
 		resp, err := client.pyx.GameInfo(*client.gameId)
 		if err != nil {
@@ -238,7 +251,7 @@ func eventGameStateChange(client *Client, event Event) {
 			return
 		}
 		judge := getJudge(&resp.PlayerInfo)
-		if judge == client.nick {
+		if judge == client.pyx.User.Name {
 			client.sendBotMessageToGame("You are judging this round.")
 		} else {
 			client.sendBotMessageToGame("The judge this round is %s.", judge)
@@ -267,7 +280,7 @@ func eventGameStateChange(client *Client, event Event) {
 			return
 		}
 		judge := getJudge(&resp.PlayerInfo)
-		if judge == client.nick {
+		if judge == client.pyx.User.Name {
 			// TODO ask for judging
 		} else {
 			client.sendBotMessageToGame("Please wait while %s selects the winning card%s.", judge,
@@ -292,5 +305,54 @@ func eventGameRoundComplete(client *Client, event Event) {
 		}
 	}
 	// yes that missing space is intentional, it'll be provided by the above formatting
-	client.sendBotMessageToGame("The round was won by %s with%s.", event.RoundWinner, winningCard)
+	client.sendBotMessageToGame("The round was won by %s by playing%s.", event.RoundWinner,
+		winningCard)
+	client.showScoreboard()
+}
+
+func (client *Client) showScoreboard() error {
+	resp, err := client.pyx.GameInfo(*client.gameId)
+	if err != nil {
+		log.Errorf("Unable to obtain info about game %d to display scoreboard", *client.gameId)
+		return err
+	}
+
+	scores := []string{}
+	winner := ""
+	for _, info := range resp.PlayerInfo {
+		if info.Status == pyx.GamePlayerStatus_WINNER {
+			winner = info.Name
+		}
+		plural := "s"
+		if info.Score == 1 {
+			plural = ""
+		}
+		scores = append(scores, fmt.Sprintf("%s with %d point%s", info.Name, info.Score, plural))
+	}
+	// TODO a proper length based on 512 minus broilerplate
+	scoresAssembled := joinIntoLines(300, scores, ", ")
+	if winner != "" {
+		client.sendBotMessageToGame("The game was won by %s! The final scores are: %s.", winner,
+			scoresAssembled[0])
+	} else {
+		client.sendBotMessageToGame("The current scores are: %s.", scoresAssembled[0])
+	}
+	if len(scoresAssembled) > 1 {
+		for i := 1; i < len(scoresAssembled); i++ {
+			client.sendBotMessageToGame(scoresAssembled[i])
+		}
+	}
+	return nil
+}
+
+func eventGamePlayerSkipped(client *Client, event Event) {
+	client.sendBotMessageToGame("%s was skipped this round for being idle.", event.Nickname)
+}
+
+func eventGameWhiteShuffle(client *Client, event Event) {
+	client.sendBotMessageToGame("The discarded white cards have been re-shuffled into a new deck.")
+}
+
+func eventGameBlackShuffle(client *Client, event Event) {
+	client.sendBotMessageToGame("The discarded black cards have been re-shuffled into a new deck.")
 }

@@ -225,7 +225,7 @@ func (client *Client) handleNamesImpl(args ...string) {
 			log.Errorf("Unable to retrieve names for %s: %v", args[0], err)
 		}
 		// TODO a proper length based on 512 minus broilerplate
-		for _, line := range joinIntoLines(300, append(names, "&"+client.config.BotNick)) {
+		for _, line := range joinIntoLines(300, append(names, "&"+client.config.BotNick), " ") {
 			client.data <- client.n.format(RplNames, client.nick, "= %s :%s", args[0], line)
 		}
 	} else {
@@ -253,7 +253,7 @@ func (client *Client) handleNamesImpl(args ...string) {
 		}
 		// TODO a proper length based on 512 minus broilerplate
 		for _, line := range joinIntoLines(300, append(append(players, resp.GameInfo.Spectators...),
-			"&"+client.config.BotNick)) {
+			"&"+client.config.BotNick), " ") {
 			client.data <- client.n.format(RplNames, client.nick, "= %s :%s", args[0], line)
 		}
 	}

@@ -35,19 +35,20 @@ const CtcpMagic byte = 1
 
 // Assemble the values in pieces into one or more space-separated strings, with no more than
 // charsPerLine characters per line.
-func joinIntoLines(charsPerLine int, pieces []string) []string {
+func joinIntoLines(charsPerLine int, pieces []string, joiner string) []string {
 	var ret []string
 	var curLine string
+	trimmedJoiner := strings.TrimSpace(joiner)
 	for _, val := range pieces {
-		if len(val) > charsPerLine {
+		if len(trimmedJoiner)+len(val) > charsPerLine {
 			panic(fmt.Sprintf("Impossibly long piece %s longer than %d", val, charsPerLine))
 		} else if len(curLine) == 0 {
 			curLine = val
-		} else if len(curLine)+1+len(val) > charsPerLine {
-			ret = append(ret, curLine)
+		} else if len(curLine)+len(joiner)+len(val) > charsPerLine {
+			ret = append(ret, curLine+trimmedJoiner)
 			curLine = val
 		} else {
-			curLine = curLine + " " + val
+			curLine = curLine + joiner + val
 		}
 	}
 	return append(ret, curLine)

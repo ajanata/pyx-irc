@@ -30,19 +30,23 @@ import (
 type joinLineTestPair struct {
 	input   []string
 	perLine int
+	joiner  string
 	output  []string
 }
 
 var joinLineTests = []joinLineTestPair{
-	{[]string{"a", "b", "c"}, 5, []string{"a b c"}},
-	{[]string{"a", "b", "c"}, 3, []string{"a b", "c"}},
-	{[]string{"a", "b", "c"}, 2, []string{"a", "b", "c"}},
-	{[]string{"a", "b", "c"}, 1, []string{"a", "b", "c"}},
+	{[]string{"a", "b", "c"}, 5, " ", []string{"a b c"}},
+	{[]string{"a", "b", "c"}, 3, " ", []string{"a b", "c"}},
+	{[]string{"a", "b", "c"}, 2, " ", []string{"a", "b", "c"}},
+	{[]string{"a", "b", "c"}, 1, " ", []string{"a", "b", "c"}},
+	{[]string{"a", "b", "c"}, 2, ", ", []string{"a,", "b,", "c"}},
+	{[]string{"a", "b", "c"}, 3, ", ", []string{"a,", "b,", "c"}},
+	{[]string{"a", "b", "c"}, 4, ", ", []string{"a, b,", "c"}},
 }
 
 func TestJoinIntoLines(t *testing.T) {
 	for _, test := range joinLineTests {
-		out := joinIntoLines(test.perLine, test.input)
+		out := joinIntoLines(test.perLine, test.input, test.joiner)
 		if len(test.output) != len(out) {
 			t.Logf("In: %v, out: %v", test.input, out)
 			t.Error("For", test.input,
