@@ -21,54 +21,9 @@
  * WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package main
+package util
 
-import (
-	"fmt"
-	"github.com/ajanata/pyx-irc/irc"
-	"github.com/ajanata/pyx-irc/util"
-	"github.com/op/go-logging"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-)
-
-var log = logging.MustGetLogger("main")
-var logFormat = logging.MustStringFormatter(`%{color}%{time:15:04:05.000} %{level:.5s} %{id:03x} %{shortfunc} (%{shortfile}) %{color:reset}>%{message}`)
+import ()
 
 var GitBranch = "(unknown)"
 var GitSummary = "(unknown)"
-
-func main() {
-	config := loadConfig()
-
-	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	stdErrLeveled := logging.AddModuleLevel(backendStdErr)
-	level, err := logging.LogLevel(config.LogLevel)
-	if err != nil {
-		fmt.Printf("Unable to configure logging: %s", err)
-		return
-	}
-	stdErrLeveled.SetLevel(level, "")
-	formattedStdErr := logging.NewBackendFormatter(stdErrLeveled, logFormat)
-	logging.SetBackend(formattedStdErr)
-
-	log.Infof("Starting pyx-irc-%s-%s...", GitBranch, GitSummary)
-	// govvv says that -pkg will set the ldflags to set these in the packag directly, but I never
-	// got it to work.
-	util.GitBranch = GitBranch
-	util.GitSummary = GitSummary
-
-	if config.RunDebugServer {
-		go func() {
-			log.Info(http.ListenAndServe("localhost:6680", nil))
-		}()
-	}
-
-	for _, server := range config.Servers {
-		log.Debugf("server config: %+v", server)
-		go irc.StartServer(server)
-	}
-
-	select {}
-}

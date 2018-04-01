@@ -28,6 +28,7 @@ package irc
 import (
 	"fmt"
 	"github.com/ajanata/pyx-irc/pyx"
+	"github.com/ajanata/pyx-irc/util"
 	"strconv"
 	"strings"
 )
@@ -132,12 +133,12 @@ func handleQuit(client *Client, msg Message) {
 func (client *Client) sendWelcome() {
 	client.data <- client.n.format(RplWelcome, client.nick,
 		":Welcome to the PYX IRC network %s!%s@%s", client.nick, client.nick, client.addr)
-	// TODO version in both of these
 	client.data <- client.n.format(RplYourHost, client.nick,
-		":Your host is %s, running version TODO", client.config.AdvertisedName)
+		":Your host is %s, running version pyx-irc-%s-%s", client.config.AdvertisedName,
+		util.GitBranch, util.GitSummary)
 	// user modes, channel modes
-	client.data <- client.n.format(RplMyInfo, client.nick, "%s TODO Bor alvontk",
-		client.config.AdvertisedName)
+	client.data <- client.n.format(RplMyInfo, client.nick, "%s pyx-irc-%s-%s Bor alvontk",
+		client.config.AdvertisedName, util.GitBranch, util.GitSummary)
 	client.data <- client.n.format(RplISupport, client.nick,
 		"MAXCHANNELS=2 CHANLIMIT=#:2 NICKLEN=30 "+
 			"CHANNELLEN=9 TOPICLEN=307 AWAYLEN=0 MAXTARGETS=1 MODES=1 CHANTYPES=# PREFIX=(aov)&@+ "+
