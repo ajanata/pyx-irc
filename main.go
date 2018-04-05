@@ -43,15 +43,15 @@ func main() {
 	config := loadConfig()
 
 	backendStdErr := logging.NewLogBackend(os.Stderr, "", 0)
-	stdErrLeveled := logging.AddModuleLevel(backendStdErr)
+	formattedStdErr := logging.NewBackendFormatter(backendStdErr, logFormat)
+	stdErrLeveled := logging.AddModuleLevel(formattedStdErr)
 	level, err := logging.LogLevel(config.LogLevel)
 	if err != nil {
 		fmt.Printf("Unable to configure logging: %s", err)
 		return
 	}
 	stdErrLeveled.SetLevel(level, "")
-	formattedStdErr := logging.NewBackendFormatter(stdErrLeveled, logFormat)
-	logging.SetBackend(formattedStdErr)
+	logging.SetBackend(stdErrLeveled)
 
 	log.Infof("Starting pyx-irc-%s-%s...", GitBranch, GitSummary)
 	// govvv says that -pkg will set the ldflags to set these in the packag directly, but I never
