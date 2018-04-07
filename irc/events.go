@@ -39,6 +39,7 @@ var EventHandlers = map[string]EventHandlerFunc{
 	pyx.LongPollEvent_BANNED:               eventBanned,
 	pyx.LongPollEvent_CHAT:                 eventChat,
 	pyx.LongPollEvent_KICKED:               eventKicked,
+	pyx.LongPollEvent_FILTERED_CHAT:        eventFilteredChat,
 	pyx.LongPollEvent_GAME_BLACK_RESHUFFLE: eventGameBlackShuffle,
 	pyx.LongPollEvent_GAME_LIST_REFRESH:    eventIgnore,
 	// TODO implement this? We can say when players played a card, if we want to...
@@ -88,6 +89,15 @@ func eventPlayerQuit(client *Client, event Event) {
 	}
 	client.data <- fmt.Sprintf(":%s QUIT :%s", client.getNickUserAtHost(event.Nickname),
 		pyx.DisconnectReasonMsgs[event.Reason])
+}
+
+func eventFilteredChat(client *Client, event Event) {
+	if event.GameId != nil && (client.gameId == nil || *event.GameId != *client.gameId) {
+		event.Message = fmt.Sprintf("(In game %d) %s", *event.GameId, event.Message)
+		event.GameId = nil
+	}
+	event.Message = "(Filtered) " + event.Message
+	eventChat(client, event)
 }
 
 func eventChat(client *Client, event Event) {
