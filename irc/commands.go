@@ -220,7 +220,7 @@ func (client *Client) handleNamesImpl(args ...string) {
 		return
 	}
 
-	if args[0] == client.config.GlobalChannel {
+	if strEqCI(args[0], client.config.GlobalChannel) {
 		names, err := client.pyx.Names()
 		if err != nil {
 			log.Errorf("Unable to retrieve names for %s: %v", args[0], err)
@@ -275,7 +275,7 @@ func (client *Client) handleTopicImpl(args ...string) {
 		var topic string
 		var set int64
 		var setBy string
-		if args[0] == client.config.GlobalChannel {
+		if strEqCI(args[0], client.config.GlobalChannel) {
 			topic = client.getTopic(args[0], nil)
 			set = client.pyx.ServerStarted
 			setBy = client.botNickUserAtHost()
@@ -323,7 +323,7 @@ func (client *Client) handleTopicImpl(args ...string) {
 // Make the topic for a channel. gameInfo may be nil if the channel being passed is known to be
 // the global channel.
 func (client *Client) getTopic(channel string, gameInfo *pyx.GameInfo) string {
-	if channel == client.config.GlobalChannel {
+	if strEqCI(channel, client.config.GlobalChannel) {
 		if client.pyx.GlobalChatEnabled {
 			return "Global chat"
 		} else {
@@ -350,7 +350,7 @@ func (client *Client) handleModeImpl(args ...string) {
 		if len(args) == 1 {
 			var modes string
 			var created int64
-			if args[0] == client.config.GlobalChannel {
+			if strEqCI(args[0], client.config.GlobalChannel) {
 				created = client.pyx.ServerStarted
 				modes = "+t"
 				if !client.pyx.GlobalChatEnabled {
@@ -443,7 +443,7 @@ func handlePing(client *Client, msg Message) {
 }
 
 func handleWho(client *Client, msg Message) {
-	if len(msg.args) == 0 || msg.args[0] == client.config.GlobalChannel {
+	if len(msg.args) == 0 || strEqCI(msg.args[0], client.config.GlobalChannel) {
 		names, err := client.pyx.Names()
 		if err != nil {
 			log.Errorf("Unable to retrieve names for %s: %v", client.config.GlobalChannel, err)
@@ -502,7 +502,7 @@ func handlePrivmsg(client *Client, msg Message) {
 	channel := msg.args[0]
 	isEmote, text := isEmote(msg.args[1])
 	var err error
-	if channel == client.config.GlobalChannel {
+	if strEqCI(channel, client.config.GlobalChannel) {
 		err = client.pyx.SendGlobalChat(text, isEmote)
 	} else if !strings.HasPrefix(channel, "#") {
 		// trying to send a private message... we don't support that
@@ -643,7 +643,7 @@ func handlePart(client *Client, msg Message) {
 			"PART :Not enough parameters")
 		return
 	}
-	if msg.args[0] == client.config.GlobalChannel {
+	if strEqCI(msg.args[0], client.config.GlobalChannel) {
 		// don't let them do that. might have to send a response to the irc client?
 		log.Debugf("User %s tried to leave %s", client.nick, client.config.GlobalChannel)
 		return
