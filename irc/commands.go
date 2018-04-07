@@ -536,6 +536,28 @@ func handleWhois(client *Client, msg Message) {
 		return
 	}
 
+	if strEqCI(client.config.BotNick, msg.args[0]) {
+		client.data <- client.n.format(RplWhoisUser, client.nick, "%s %s %s * %s",
+			client.config.BotNick, client.config.BotUsername, client.config.BotHostname,
+			client.config.BotNick)
+		channels := "&" + client.config.GlobalChannel
+		if client.gameId != nil {
+			channels = channels + " &" + client.getGameChannel()
+		}
+		client.data <- client.n.format(RplWhoisChannels, client.nick, "%s :%s",
+			client.config.BotNick, channels)
+		client.data <- client.n.format(RplWhoisServer, client.nick, "%s %s :%s",
+			client.config.BotNick, client.config.AdvertisedName, client.config.Pyx.BaseAddress)
+		client.data <- client.n.format(RplWhoisOperator, client.nick, "%s :is an Administrator",
+			client.config.BotNick)
+		client.data <- client.n.format(RplWhoisBot, client.nick, "%s :is a Bot",
+			client.config.BotNick)
+
+		client.data <- client.n.format(RplEndOfWhois, client.nick, "%s :End of /WHOIS list.",
+			client.config.BotNick)
+		return
+	}
+
 	// TODO special case for bot nick
 	resp, err := client.pyx.Whois(msg.args[0])
 	if err != nil {

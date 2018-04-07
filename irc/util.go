@@ -155,3 +155,8 @@ func getJudge(playerInfo *[]pyx.GamePlayerInfo) string {
 	log.Error("getJudge called without a judge in the player info?!")
 	return ""
 }
+
+// Case insensitive string equality
+func strEqCI(left string, right string) bool {
+	return strings.ToLower(left) == strings.ToLower(right)
+}
