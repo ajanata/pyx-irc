@@ -77,6 +77,15 @@ func (manager *Manager) listenForConnections() {
 }
 
 func (manager *Manager) receive(client *Client) {
+	defer func() {
+		// this is dumb and really should be refactored to avoid
+		// this is also really bad cuz it'll eat segfaults
+		if r := recover(); r != nil {
+			log.Warningf("Recovered from panic, probably due to PYX server error: %v", r)
+			manager.unregister <- client
+			client.socket.Close()
+		}
+	}()
 	for {
 		if !client.reader.Scan() {
 			log.Debugf("Unable to read from client %s, closing connection on %d.",

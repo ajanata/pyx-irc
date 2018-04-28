@@ -102,6 +102,15 @@ func (client *Client) receive() {
 
 			var res interface{}
 			// this is dumb but I can't figure out another way to do it
+			if !strings.HasPrefix(resp.Header().Get("Content-Type"), "application/json") {
+				// probably an error of some description
+				log.Errorf("Didn't get JSON response for long poll for session %s, body: %s",
+					client.sessionId, resp.String())
+				// order matters here!
+				client.pollWg.Done()
+				client.Close()
+				return
+			}
 			if strings.HasPrefix(resp.String(), "[") {
 				// array of LongPollResponse
 				var t []*LongPollResponse
