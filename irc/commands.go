@@ -411,7 +411,7 @@ func (client *Client) handleModeImpl(args ...string) {
 					"MODE :You can't do that.")
 			}
 		}
-	} else if args[0] == client.nick {
+	} else if strEqCI(args[0], client.nick) {
 		if len(args) == 1 {
 			// show modes
 			// default to no modes. this is how unreal reports it
@@ -478,7 +478,7 @@ func handleWho(client *Client, msg Message) {
 			target = client.config.GlobalChannel
 		}
 		client.data <- client.n.format(RplEndOfWho, client.nick, "%s :End of /WHO list", target)
-	} else if msg.args[0] == client.getGameChannel() {
+	} else if strEqCI(msg.args[0], client.getGameChannel()) {
 		// TODO per-game channels, send something so irssi doesn't keep waiting
 		client.data <- client.n.format(RplEndOfWho, client.nick, "%s :End of /WHO list",
 			msg.args[0])
